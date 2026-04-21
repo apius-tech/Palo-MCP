@@ -5,3 +5,4 @@ extension/
 *.mcpb
 .env
 firewalls.json
+*.test.tmp.json

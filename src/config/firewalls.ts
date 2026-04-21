@@ -81,7 +81,8 @@ export async function loadFirewallConfig(): Promise<void> {
   // Load keys into memory
   for (const e of entries) {
     if (isKeychainAvailable()) {
-      const key = await getKey(e.name);
+      const fileEntry = fileEntries.find((f) => f.name === e.name);
+      const key = (await getKey(e.name)) ?? fileEntry?.api_key ?? null;
       if (key) {
         keyMap.set(e.name, key);
       } else {
