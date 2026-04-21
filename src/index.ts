@@ -21,8 +21,6 @@ import { registerLicensesTools } from "./tools/licenses.js";
 import { registerConfigTools } from "./tools/config.js";
 import { registerUtilityTools } from "./tools/utility.js";
 
-loadFirewallConfig();
-
 const server = new McpServer({
   name: "panos-mcp",
   version: "1.3.15",
@@ -47,6 +45,7 @@ registerConfigTools(server);
 registerUtilityTools(server);
 
 async function main() {
+  await loadFirewallConfig();
   const transport = new StdioServerTransport();
   await server.connect(transport);
 }
