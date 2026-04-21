@@ -3,6 +3,7 @@
 import { createInterface } from "readline";
 import { generateApiKey } from "../api/client.js";
 import { saveFirewallEntry } from "../config/firewalls.js";
+import { isKeychainAvailable } from "../config/keychain.js";
 
 function parseArgs(argv: string[]): { host?: string; user?: string; name?: string } {
   const args: Record<string, string> = {};
@@ -83,8 +84,12 @@ async function main() {
   console.log(key);
 
   if (args.name) {
-    saveFirewallEntry({ name: args.name, host: args.host, api_key: key });
-    console.error(`Saved as "${args.name}" in firewalls.json`);
+    await saveFirewallEntry({ name: args.name, host: args.host, api_key: key });
+    if (isKeychainAvailable()) {
+      console.error(`Saved "${args.name}" — host in firewalls.json, key in system keychain`);
+    } else {
+      console.error(`Saved "${args.name}" in firewalls.json (WARNING: API key stored in plaintext)`);
+    }
   }
 }
 
