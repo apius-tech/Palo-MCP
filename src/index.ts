@@ -23,7 +23,7 @@ import { registerUtilityTools } from "./tools/utility.js";
 
 const server = new McpServer({
   name: "panos-mcp",
-  version: "1.3.15",
+  version: "1.3.16",
 });
 
 // Register all tools

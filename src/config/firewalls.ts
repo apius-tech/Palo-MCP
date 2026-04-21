@@ -2,7 +2,7 @@ import { z } from "zod";
 import { readFileSync, writeFileSync, mkdirSync } from "fs";
 import { join, dirname } from "path";
 import { homedir } from "os";
-import { getKey, setKey, isKeychainAvailable } from "./keychain.js";
+import { getKey, setKey, isKeychainAvailable, initKeychain } from "./keychain.js";
 
 export interface FirewallEntry {
   name: string;
@@ -36,6 +36,8 @@ export function getConfigPath(): string {
 export async function loadFirewallConfig(): Promise<void> {
   entries = [];
   keyMap.clear();
+
+  await initKeychain();
 
   const configPath = getConfigPath();
 
@@ -130,6 +132,7 @@ export function getFirewallEntries(): Array<{ name: string; host: string }> {
 }
 
 export async function saveFirewallEntry(entry: FirewallEntry): Promise<void> {
+  await initKeychain();
   entry = { ...entry, host: sanitizeHost(entry.host) };
   const configPath = getConfigPath();
   mkdirSync(dirname(configPath), { recursive: true });

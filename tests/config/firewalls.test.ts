@@ -7,6 +7,7 @@ vi.mock("../../src/config/keychain.js", () => ({
   setKey: vi.fn(),
   deleteKey: vi.fn(),
   isKeychainAvailable: vi.fn(),
+  initKeychain: vi.fn().mockResolvedValue(undefined),
 }));
 
 import { getKey, setKey, isKeychainAvailable } from "../../src/config/keychain.js";

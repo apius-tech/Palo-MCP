@@ -1,42 +1,60 @@
-import { Entry } from "@napi-rs/keyring";
+type KeyringEntry = {
+  getPassword(): string | null;
+  setPassword(password: string): void;
+  deletePassword(): boolean;
+};
+type EntryCtor = new (service: string, username: string) => KeyringEntry;
 
 const SERVICE = "panos-mcp";
-let keychainAvailable: boolean | null = null;
+let EntryClass: EntryCtor | null | undefined;
+let keychainAvailable = false;
 
-function checkKeychainAvailable(): boolean {
-  if (keychainAvailable !== null) return keychainAvailable;
+async function ensureLoaded(): Promise<void> {
+  if (EntryClass !== undefined) return;
   try {
-    new Entry(SERVICE, "__availability_test__").getPassword();
+    const mod = await import("@napi-rs/keyring");
+    const E = (mod as { Entry: EntryCtor }).Entry;
+    new E(SERVICE, "__availability_test__").getPassword();
+    EntryClass = E;
     keychainAvailable = true;
   } catch {
+    EntryClass = null;
     keychainAvailable = false;
     process.stderr.write(
       "[panos-mcp] WARNING: Keychain unavailable — API keys will be stored in plaintext\n"
     );
   }
-  return keychainAvailable;
+}
+
+export async function initKeychain(): Promise<void> {
+  await ensureLoaded();
 }
 
 export function isKeychainAvailable(): boolean {
-  return checkKeychainAvailable();
+  return keychainAvailable;
 }
 
 export async function getKey(name: string): Promise<string | null> {
-  if (!isKeychainAvailable()) return null;
+  await ensureLoaded();
+  if (!keychainAvailable || !EntryClass) return null;
   try {
-    return new Entry(SERVICE, name).getPassword() ?? null;
+    return new EntryClass(SERVICE, name).getPassword() ?? null;
   } catch {
     return null;
   }
 }
 
 export async function setKey(name: string, key: string): Promise<void> {
-  new Entry(SERVICE, name).setPassword(key);
+  await ensureLoaded();
+  if (!EntryClass) return;
+  new EntryClass(SERVICE, name).setPassword(key);
 }
 
 export async function deleteKey(name: string): Promise<void> {
+  await ensureLoaded();
+  if (!EntryClass) return;
   try {
-    new Entry(SERVICE, name).deletePassword();
+    new EntryClass(SERVICE, name).deletePassword();
   } catch {
     // entry doesn't exist, ignore
   }

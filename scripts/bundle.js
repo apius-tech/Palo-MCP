@@ -7,6 +7,7 @@ await build({
   platform: "node",
   format: "cjs",
   target: "node18",
+  external: ["@napi-rs/keyring"],
 });
 
 console.log("Bundle created: extension/server/index.cjs");
