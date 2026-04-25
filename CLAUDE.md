@@ -47,3 +47,7 @@ PANOS_API_KEY=<api-key>
 ## Key Patterns
 
 <!-- TODO: Document project-specific patterns as they emerge -->
+
+## Conventions
+
+- Do not sign commits, pull requests, issue comments, or reviews with Claude attribution. No `Co-Authored-By: Claude ...`, no `https://claude.ai/code/...` footer, no `🤖 Generated with Claude Code`.
