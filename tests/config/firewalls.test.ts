@@ -16,7 +16,9 @@ import {
   resolveFirewall,
   isMultiFirewall,
   getFirewallEntries,
+  getExpectedEnvironmentVariableNames,
   saveFirewallEntry,
+  setInjectedEnvironment,
 } from "../../src/config/firewalls.js";
 
 const tmpConfig = resolve("firewalls.test.tmp.json");
@@ -42,6 +44,8 @@ describe("firewalls config", () => {
     delete process.env.PANOS_FIREWALLS_CONFIG;
     delete process.env.PANOS_HOST;
     delete process.env.PANOS_API_KEY;
+    delete process.env.PANOS_VERIFY_SSL;
+    setInjectedEnvironment(new Map());
   });
 
   describe("no config file — env var fallback", () => {
@@ -57,7 +61,26 @@ describe("firewalls config", () => {
     it("resolves to env entry when env vars are set", () => {
       process.env.PANOS_HOST = "10.0.0.1";
       process.env.PANOS_API_KEY = "key123";
-      expect(resolveFirewall()).toEqual({ name: "env", host: "10.0.0.1", api_key: "key123" });
+      expect(resolveFirewall()).toEqual({ name: "env", host: "10.0.0.1", api_key: "key123", verify_ssl: false });
+    });
+
+    it("prefers injected 1Password values over process env values", () => {
+      process.env.PANOS_HOST = "plain-fw.example.com";
+      process.env.PANOS_API_KEY = "plain-key";
+      setInjectedEnvironment(
+        new Map([
+          ["PANOS_HOST", "https://op-fw.example.com/"],
+          ["PANOS_API_KEY", "op-key"],
+          ["PANOS_VERIFY_SSL", "true"],
+        ])
+      );
+
+      expect(resolveFirewall()).toEqual({
+        name: "env",
+        host: "op-fw.example.com",
+        api_key: "op-key",
+        verify_ssl: true,
+      });
     });
 
     it("isMultiFirewall returns false", () => {
@@ -78,11 +101,11 @@ describe("firewalls config", () => {
     });
 
     it("resolves without name (defaults to single entry)", () => {
-      expect(resolveFirewall()).toEqual({ name: "fw1", host: "10.0.1.1", api_key: "key1" });
+      expect(resolveFirewall()).toEqual({ name: "fw1", host: "10.0.1.1", api_key: "key1", verify_ssl: false });
     });
 
     it("resolves by name", () => {
-      expect(resolveFirewall("fw1")).toEqual({ name: "fw1", host: "10.0.1.1", api_key: "key1" });
+      expect(resolveFirewall("fw1")).toEqual({ name: "fw1", host: "10.0.1.1", api_key: "key1", verify_ssl: false });
     });
 
     it("returns null for unknown name", () => {
@@ -113,7 +136,7 @@ describe("firewalls config", () => {
     });
 
     it("resolves by name", () => {
-      expect(resolveFirewall("fw2")).toEqual({ name: "fw2", host: "10.0.2.2", api_key: "key2" });
+      expect(resolveFirewall("fw2")).toEqual({ name: "fw2", host: "10.0.2.2", api_key: "key2", verify_ssl: false });
     });
 
     it("returns null for unknown name", () => {
@@ -128,6 +151,72 @@ describe("firewalls config", () => {
       expect(getFirewallEntries()).toHaveLength(2);
     });
   });
+
+  describe("api_key_env entries", () => {
+    beforeEach(() => {
+      process.env.PANOS_FIREWALLS_CONFIG = tmpConfig;
+    });
+
+    it("loads an entry API key from injected 1Password variables", async () => {
+      setInjectedEnvironment(new Map([["HQ_FW_API_KEY", "op-hq-key"]]));
+      writeConfig({
+        firewalls: [{ name: "fw1", host: "10.0.1.1", api_key_env: "HQ_FW_API_KEY" }],
+      });
+
+      await loadFirewallConfig();
+
+      expect(resolveFirewall("fw1")).toEqual({
+        name: "fw1",
+        host: "10.0.1.1",
+        api_key: "op-hq-key",
+        verify_ssl: false,
+      });
+      expect(vi.mocked(getKey)).not.toHaveBeenCalledWith("fw1");
+    });
+
+    it("does not fall back to keychain when an explicit api_key_env is missing", async () => {
+      keychainStore.set("fw1", "keychain-key");
+      writeConfig({
+        firewalls: [{ name: "fw1", host: "10.0.1.1", api_key_env: "MISSING_FW_API_KEY" }],
+      });
+
+      await loadFirewallConfig();
+
+      expect(resolveFirewall("fw1")).toBeNull();
+    });
+  });
+
+  describe("getExpectedEnvironmentVariableNames", () => {
+    beforeEach(() => {
+      process.env.PANOS_FIREWALLS_CONFIG = tmpConfig;
+    });
+
+    it("includes single-firewall PANOS env vars without a config file", () => {
+      expect(getExpectedEnvironmentVariableNames()).toEqual(
+        new Set(["PANOS_HOST", "PANOS_API_KEY", "PANOS_VERIFY_SSL"])
+      );
+    });
+
+    it("includes api_key_env names from firewalls.json", () => {
+      writeConfig({
+        firewalls: [
+          { name: "fw1", host: "10.0.1.1", api_key_env: "HQ_FW_API_KEY" },
+          { name: "fw2", host: "10.0.2.2", api_key_env: "BRANCH_FW_API_KEY" },
+        ],
+      });
+
+      expect(getExpectedEnvironmentVariableNames()).toEqual(
+        new Set([
+          "PANOS_HOST",
+          "PANOS_API_KEY",
+          "PANOS_VERIFY_SSL",
+          "HQ_FW_API_KEY",
+          "BRANCH_FW_API_KEY",
+        ])
+      );
+    });
+  });
+
 
   describe("migration — plaintext api_key in JSON", () => {
     beforeEach(() => {
@@ -163,6 +252,7 @@ describe("firewalls config", () => {
         name: "fw1",
         host: "10.0.1.1",
         api_key: "migrated-key",
+        verify_ssl: false,
       });
     });
 
@@ -197,6 +287,7 @@ describe("firewalls config", () => {
         name: "fw1",
         host: "10.0.1.1",
         api_key: "plaintext-key",
+        verify_ssl: false,
       });
     });
 
@@ -262,7 +353,7 @@ describe("firewalls config", () => {
 
       expect(getFirewallEntries()).toHaveLength(1);
       expect(getFirewallEntries()[0].name).toBe("fw1");
-      expect(resolveFirewall("fw1")).toEqual({ name: "fw1", host: "10.0.1.1", api_key: "key1" });
+      expect(resolveFirewall("fw1")).toEqual({ name: "fw1", host: "10.0.1.1", api_key: "key1", verify_ssl: false });
     });
   });
 });

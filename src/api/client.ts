@@ -38,7 +38,7 @@ export function resolveTarget(firewallParam?: string): FirewallTarget | ApiRespo
     }
     return {
       success: false,
-      error: "No firewall configured. Set PANOS_HOST/PANOS_API_KEY environment variables or provide a firewalls.json config file.",
+      error: "No firewall configured. Set PANOS_HOST/PANOS_API_KEY directly, load them from 1Password with OP_ENVIRONMENT_ID/OP_SERVICE_ACCOUNT_TOKEN, or provide a firewalls.json config file.",
     };
   }
 

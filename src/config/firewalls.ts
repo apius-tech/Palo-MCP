@@ -15,6 +15,7 @@ const firewallFileEntrySchema = z.object({
   name: z.string().min(1).max(63),
   host: z.string().min(1),
   api_key: z.string().optional(),
+  api_key_env: z.string().min(1).optional(),
   verify_ssl: z.boolean().optional(),
 });
 
@@ -28,11 +29,63 @@ function sanitizeHost(host: string): string {
 
 let entries: Array<{ name: string; host: string; verify_ssl: boolean }> = [];
 const keyMap = new Map<string, string>();
+const injectedEnvironment = new Map<string, string>();
 
 const defaultConfigPath = join(homedir(), ".config", "panos-mcp", "firewalls.json");
 
 export function getConfigPath(): string {
   return process.env.PANOS_FIREWALLS_CONFIG ?? defaultConfigPath;
+}
+
+export function getExpectedEnvironmentVariableNames(): Set<string> {
+  const names = new Set(["PANOS_HOST", "PANOS_API_KEY", "PANOS_VERIFY_SSL"]);
+  let raw: string;
+  try {
+    raw = readFileSync(getConfigPath(), "utf-8");
+  } catch {
+    return names;
+  }
+
+  const parsed = firewallConfigSchema.parse(JSON.parse(raw));
+  for (const entry of parsed.firewalls) {
+    if (entry.api_key_env) names.add(entry.api_key_env);
+  }
+
+  return names;
+}
+
+export function setInjectedEnvironment(env: ReadonlyMap<string, string>): void {
+  injectedEnvironment.clear();
+  for (const [name, value] of env) {
+    injectedEnvironment.set(name, value);
+  }
+}
+
+function readConfiguredEnv(name: string): string {
+  const injected = injectedEnvironment.get(name);
+  if (injected !== undefined) return injected.trim();
+  return (process.env[name] ?? "").trim();
+}
+
+function parseBooleanEnv(value: string): boolean | null {
+  const normalized = value.trim().toLowerCase();
+  if (["1", "true", "yes", "on"].includes(normalized)) return true;
+  if (["0", "false", "no", "off"].includes(normalized)) return false;
+  return null;
+}
+
+function fileEntryWithoutPlaintextKey(entry: {
+  name: string;
+  host: string;
+  api_key_env?: string;
+  verify_ssl: boolean;
+}): { name: string; host: string; api_key_env?: string; verify_ssl?: boolean } {
+  return {
+    name: entry.name,
+    host: entry.host,
+    ...(entry.api_key_env ? { api_key_env: entry.api_key_env } : {}),
+    ...(entry.verify_ssl ? { verify_ssl: entry.verify_ssl } : {}),
+  };
 }
 
 export async function loadFirewallConfig(): Promise<void> {
@@ -55,6 +108,7 @@ export async function loadFirewallConfig(): Promise<void> {
     name: e.name,
     host: sanitizeHost(e.host),
     api_key: e.api_key,
+    api_key_env: e.api_key_env,
     verify_ssl: e.verify_ssl ?? false,
   }));
 
@@ -66,7 +120,7 @@ export async function loadFirewallConfig(): Promise<void> {
         for (const e of toMigrate) {
           await setKey(e.name, e.api_key!);
         }
-        const cleaned = { firewalls: fileEntries.map(({ name, host }) => ({ name, host })) };
+        const cleaned = { firewalls: fileEntries.map(fileEntryWithoutPlaintextKey) };
         writeFileSync(configPath, JSON.stringify(cleaned, null, 2) + "\n");
         process.stderr.write(
           `[panos-mcp] Migrated ${toMigrate.length} API key(s) to system keychain\n`
@@ -83,8 +137,20 @@ export async function loadFirewallConfig(): Promise<void> {
 
   // Load keys into memory
   for (const e of entries) {
+    const fileEntry = fileEntries.find((f) => f.name === e.name);
+    if (fileEntry?.api_key_env) {
+      const key = readConfiguredEnv(fileEntry.api_key_env);
+      if (key) {
+        keyMap.set(e.name, key);
+      } else {
+        process.stderr.write(
+          `[panos-mcp] WARNING: Environment variable "${fileEntry.api_key_env}" for firewall "${e.name}" is not set — it will be unavailable\n`
+        );
+      }
+      continue;
+    }
+
     if (isKeychainAvailable()) {
-      const fileEntry = fileEntries.find((f) => f.name === e.name);
       const key = (await getKey(e.name)) ?? fileEntry?.api_key ?? null;
       if (key) {
         keyMap.set(e.name, key);
@@ -120,9 +186,10 @@ export function resolveFirewall(name?: string): FirewallEntry | null {
   if (entries.length > 1) return null;
 
   // No config entries — fall back to env vars
-  const host = sanitizeHost(process.env.PANOS_HOST ?? "");
-  const api_key = (process.env.PANOS_API_KEY ?? "").trim();
-  if (host && api_key) return { name: "env", host, api_key, verify_ssl: false };
+  const host = sanitizeHost(readConfiguredEnv("PANOS_HOST"));
+  const api_key = readConfiguredEnv("PANOS_API_KEY");
+  const verify_ssl = parseBooleanEnv(readConfiguredEnv("PANOS_VERIFY_SSL")) ?? false;
+  if (host && api_key) return { name: "env", host, api_key, verify_ssl };
 
   return null;
 }
@@ -137,7 +204,7 @@ export function getFirewallEntries(): Array<{ name: string; host: string; verify
 
 export async function saveFirewallEntry(entry: FirewallEntry): Promise<void> {
   await initKeychain();
-  entry = { ...entry, host: sanitizeHost(entry.host) };
+  entry = { ...entry, host: sanitizeHost(entry.host), verify_ssl: entry.verify_ssl ?? false };
   const configPath = getConfigPath();
   mkdirSync(dirname(configPath), { recursive: true });
 

@@ -15,7 +15,9 @@
       "args": ["${__dirname}/server/index.cjs"],
       "env": {
         "PANOS_HOST": "${user_config.host}",
-        "PANOS_API_KEY": "${user_config.api_key}"
+        "PANOS_API_KEY": "${user_config.api_key}",
+        "OP_ENVIRONMENT_ID": "${user_config.op_environment_id}",
+        "OP_SERVICE_ACCOUNT_TOKEN": "${user_config.op_service_account_token}"
       }
     }
   },
@@ -142,15 +144,28 @@
     "host": {
       "type": "string",
       "title": "Firewall Host",
-      "description": "PanOS firewall or Panorama hostname or IP address",
-      "required": true
+      "description": "PanOS firewall or Panorama hostname or IP address. Provide with API Key, or leave blank when using a complete 1Password pair.",
+      "required": false
     },
     "api_key": {
       "type": "string",
       "title": "API Key",
-      "description": "PanOS API key",
+      "description": "PanOS API key. Provide with Firewall Host, or leave blank when using a complete 1Password pair.",
       "sensitive": true,
-      "required": true
+      "required": false
+    },
+    "op_environment_id": {
+      "type": "string",
+      "title": "1Password Environment ID",
+      "description": "1Password Environment containing PANOS_HOST and PANOS_API_KEY. Provide with a service account token.",
+      "required": false
+    },
+    "op_service_account_token": {
+      "type": "string",
+      "title": "1Password Service Account Token",
+      "description": "Service account token with access to the 1Password Environment. Provide with an Environment ID.",
+      "sensitive": true,
+      "required": false
     }
   }
 }

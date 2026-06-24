@@ -1,5 +1,5 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { getFirewallEntries, isMultiFirewall } from "../config/firewalls.js";
+import { getFirewallEntries, isMultiFirewall, resolveFirewall } from "../config/firewalls.js";
 
 export function registerFirewallTools(server: McpServer) {
   server.tool(
@@ -29,9 +29,9 @@ export function registerFirewallTools(server: McpServer) {
       };
 
       if (entries.length === 0) {
-        const host = process.env.PANOS_HOST;
-        if (host) {
-          data.firewalls = [{ name: "env", host }];
+        const envFirewall = resolveFirewall();
+        if (envFirewall) {
+          data.firewalls = [{ name: envFirewall.name, host: envFirewall.host }];
         }
       }
 

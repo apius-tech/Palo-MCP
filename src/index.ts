@@ -2,8 +2,13 @@
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { loadFirewallConfig } from "./config/firewalls.js";
+import {
+  getExpectedEnvironmentVariableNames,
+  loadFirewallConfig,
+  setInjectedEnvironment,
+} from "./config/firewalls.js";
 import { isKeychainAvailable } from "./config/keychain.js";
+import { loadOnePasswordEnvironment } from "./config/onepassword.js";
 import { describeProxy } from "./api/proxy.js";
 
 import { registerFirewallTools } from "./tools/firewalls.js";
@@ -64,6 +69,16 @@ registerConfigTools(server);
 registerUtilityTools(server);
 
 async function main() {
+  const onePasswordEnvironment = await loadOnePasswordEnvironment({
+    allowedNames: getExpectedEnvironmentVariableNames(),
+  });
+  setInjectedEnvironment(onePasswordEnvironment);
+  if (onePasswordEnvironment.size > 0) {
+    process.stderr.write(
+      `[panos-mcp] Loaded ${onePasswordEnvironment.size} environment variable(s) from 1Password Environment\n`
+    );
+  }
+
   await loadFirewallConfig();
   if (!isKeychainAvailable()) {
     process.stderr.write(
@@ -80,4 +95,7 @@ async function main() {
   await server.connect(transport);
 }
 
-main().catch(console.error);
+main().catch((error) => {
+  console.error(error instanceof Error ? error.message : String(error));
+  process.exit(1);
+});

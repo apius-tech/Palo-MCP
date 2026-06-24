@@ -3,12 +3,12 @@
     {
       "name": "hq-fw01",
       "host": "10.0.1.1",
-      "api_key": "LUFRPT..."
+      "api_key_env": "PANOS_HQ_FW01_API_KEY"
     },
     {
       "name": "branch-fw01",
       "host": "10.0.2.1",
-      "api_key": "LUFRPT..."
+      "api_key_env": "PANOS_BRANCH_FW01_API_KEY"
     }
   ]
 }
