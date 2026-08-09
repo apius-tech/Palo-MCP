@@ -2,7 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![GitHub stars](https://img.shields.io/github/stars/apius-tech/Palo-MCP)](https://github.com/apius-tech/Palo-MCP/stargazers)
-[![Tests](https://img.shields.io/badge/tests-85%20passing-brightgreen)](https://github.com/apius-tech/Palo-MCP/actions)
+[![Tests](https://img.shields.io/badge/tests-109%20passing-brightgreen)](https://github.com/apius-tech/Palo-MCP/actions)
 [![GitHub release](https://img.shields.io/github/v/release/apius-tech/Palo-MCP)](https://github.com/apius-tech/Palo-MCP/releases/latest)
 
 **Control your Palo Alto Networks firewall with AI.** PanOS MCP is an [MCP (Model Context Protocol)](https://modelcontextprotocol.io) server that connects AI assistants — Claude, Cursor, and others — directly to PAN-OS firewalls and Panorama via the PAN-OS XML API. Ask questions, inspect policies, and make configuration changes in plain English instead of navigating the GUI or writing API scripts.
@@ -147,7 +147,7 @@ When multiple entries are configured, every tool accepts a `firewall: <name>` pa
 |----------|-------|-------------|
 | System | 4 | Firewall info, HA status, sessions, resources |
 | Network | 10 | Interfaces, zones, routing, ARP, VLANs, DHCP, DNS proxy, static routes (get, add, delete) |
-| Security | 14 | Security rules CRUD, profiles, profile groups, PBF rules CRUD, DoS, QoS rules CRUD |
+| Security | 18 | Security rules CRUD, profiles, profile groups, PBF rules CRUD, DoS, QoS rules CRUD |
 | Objects | 16 | Address/service objects and groups (get, add, delete), application filters, tags (get, add, delete) |
 | NAT | 5 | NAT rules (get, add, move, delete, enable/disable) |
 | User-ID | 3 | User-IP mappings, groups, config |
@@ -264,7 +264,7 @@ This software is provided "as is", without warranty of any kind. This tool conne
 
 ## Security
 
-To report a security vulnerability, please [open a GitHub issue](https://github.com/apius-tech/Palo-MCP/issues/new?labels=security&title=Security+vulnerability) with the `security` label. We will investigate and respond promptly.
+Please **do not** open a public GitHub issue for security vulnerabilities. See [SECURITY.md](SECURITY.md) for private reporting via GitHub Private Vulnerability Reporting or email.
 
 ## License
 
