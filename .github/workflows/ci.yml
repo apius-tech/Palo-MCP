@@ -32,9 +32,10 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
 
-      # npm 10 (bundled with Node 22) audits via the legacy /security/audits/quick
-      # endpoint, which the registry no longer serves reliably. npm 11 uses
-      # /security/advisories/bulk instead, so pin it for every matrix entry.
+      # Node 22 ships npm 10 and Node 24 ships npm 11, and the two talk to
+      # different registry audit endpoints (/security/audits/quick vs
+      # /security/advisories/bulk). Pin one npm so both matrix entries audit
+      # through the same path.
       - name: Use npm 11
         run: npm install -g npm@11
 
@@ -47,8 +48,20 @@ jobs:
       - name: Test
         run: npm test
 
+      # The registry audit endpoints flake (503s, 400s, timeouts). Retry only
+      # that failure mode — a real advisory fails the gate on the first pass.
       - name: Audit production dependencies
-        run: npm audit --omit=dev
+        run: |
+          for attempt in 1 2; do
+            if out=$(npm audit --omit=dev 2>&1); then
+              echo "$out"
+              exit 0
+            fi
+            echo "$out"
+            grep -q "audit endpoint returned an error" <<< "$out" || exit 1
+            echo "::warning::npm audit registry error (attempt $attempt/2)"
+          done
+          exit 1
 
   # Single stable gate for branch protection — stays valid as the matrix changes.
   ci:
