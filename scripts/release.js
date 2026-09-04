@@ -25,15 +25,19 @@ function sleep(ms) {
 }
 
 /**
- * Latest state of the "CI" check for a commit: {status, conclusion}, or null
- * when GitHub has no such check run (nothing pushed, or the workflow never ran).
+ * Latest state of the CI workflow for a commit: {status, conclusion}, or null
+ * when GitHub has no run for it (nothing pushed, or the workflow never fired).
+ *
+ * Deliberately the workflow run and not the "CI" check — that check is the
+ * aggregating job, so it only appears once the test matrix has finished, and a
+ * commit whose tests are still running would otherwise look like no CI at all.
  */
 function ciCheck(sha) {
   const result = runCapture("gh", [
     "api",
-    `repos/{owner}/{repo}/commits/${sha}/check-runs`,
+    `repos/{owner}/{repo}/actions/workflows/ci.yml/runs?head_sha=${sha}`,
     "--jq",
-    '[.check_runs[] | select(.name == "CI")] | sort_by(.started_at) | last '
+    '.workflow_runs | sort_by(.run_started_at) | last '
       + '| if . == null then empty else "\(.status) \(.conclusion // "")" end',
   ]);
   if (result.status !== 0 || result.stdout.length === 0) return null;
@@ -70,7 +74,7 @@ if (!allowRedCi) {
   const check = ciCheck(headSha);
   if (!check) {
     console.error(
-      `No CI check found for HEAD (${headSha.slice(0, 7)}). Push the branch and let CI run, `
+      `No CI run found for HEAD (${headSha.slice(0, 7)}). Push the commit and let CI run, `
         + "or pass --allow-red-ci to release anyway."
     );
     process.exit(1);
