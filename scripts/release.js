@@ -38,7 +38,7 @@ function ciCheck(sha) {
     `repos/{owner}/{repo}/actions/workflows/ci.yml/runs?head_sha=${sha}`,
     "--jq",
     '.workflow_runs | sort_by(.run_started_at) | last '
-      + '| if . == null then empty else "\(.status) \(.conclusion // "")" end',
+      + '| if . == null then empty else [.status, (.conclusion // "")] | join(" ") end',
   ]);
   if (result.status !== 0 || result.stdout.length === 0) return null;
   const [status, conclusion] = result.stdout.split(" ");
