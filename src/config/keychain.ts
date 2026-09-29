@@ -13,9 +13,7 @@ async function ensureLoaded(): Promise<void> {
   if (EntryClass !== undefined) return;
   try {
     const mod = await import("@napi-rs/keyring");
-    const E = (mod as { Entry: EntryCtor }).Entry;
-    new E(SERVICE, "__availability_test__").getPassword();
-    EntryClass = E;
+    EntryClass = (mod as { Entry: EntryCtor }).Entry;
     keychainAvailable = true;
   } catch {
     EntryClass = null;
@@ -23,7 +21,20 @@ async function ensureLoaded(): Promise<void> {
     process.stderr.write(
       "[panos-mcp] WARNING: Keychain unavailable — API keys will be stored in plaintext\n"
     );
+    return;
   }
+  // A probe error (locked keychain, denied access) means the store exists but is
+  // failing right now. Keep it marked available so keys are never downgraded to
+  // plaintext because of a transient error — reads and writes surface it instead.
+  try {
+    new EntryClass(SERVICE, "__availability_test__").getPassword();
+  } catch (err) {
+    process.stderr.write(`[panos-mcp] WARNING: Keychain probe failed — ${describe(err)}\n`);
+  }
+}
+
+function describe(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
 }
 
 export async function initKeychain(): Promise<void> {
@@ -39,7 +50,8 @@ export async function getKey(name: string): Promise<string | null> {
   if (!keychainAvailable || !EntryClass) return null;
   try {
     return new EntryClass(SERVICE, name).getPassword() ?? null;
-  } catch {
+  } catch (err) {
+    process.stderr.write(`[panos-mcp] WARNING: Keychain read failed for "${name}" — ${describe(err)}\n`);
     return null;
   }
 }
