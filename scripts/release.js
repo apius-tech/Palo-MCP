@@ -1,5 +1,5 @@
-import { readFileSync, writeFileSync } from "fs";
 import { spawnSync } from "child_process";
+import { applyVersion, fileVersion, latestTag, nextVersion } from "./version.js";
 
 const args = process.argv.slice(2);
 const allowRedCi = args.includes("--allow-red-ci");
@@ -92,22 +92,22 @@ if (!allowRedCi) {
   }
 }
 
-const oldVersion = JSON.parse(readFileSync("package.json", "utf8")).version;
-const oldTag = `v${oldVersion}`;
+// Pull tags cut by CI (scripts/ci-release.js) so the next version is computed
+// from what was actually released.
+run("git", ["fetch", "--tags", "--quiet", "origin"]);
+
+// The last tag, not package.json: CI releases (scripts/ci-release.js) tag
+// without committing the bump, so package.json can lag behind.
+const oldTag = latestTag() ?? `v${fileVersion()}`;
 
 const log = runCapture("git", ["log", `${oldTag}..HEAD`, "--oneline"]);
 const changelog = log.status === 0 && log.stdout.length > 0
   ? log.stdout
   : "(no commits found since previous tag)";
 
-run("npm", ["version", bumpType, "--no-git-tag-version"]);
-const newVersion = JSON.parse(readFileSync("package.json", "utf8")).version;
+const newVersion = nextVersion(bumpType);
 const newTag = `v${newVersion}`;
-
-for (const file of ["manifest.json", "src/index.ts"]) {
-  const contents = readFileSync(file, "utf8");
-  writeFileSync(file, contents.replace(`"${oldVersion}"`, `"${newVersion}"`));
-}
+applyVersion(newVersion);
 
 run("npm", ["run", "pack:extension"]);
 

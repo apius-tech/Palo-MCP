@@ -1,0 +1,82 @@
+name: Release
+
+# Publishes a patch release with a fresh .mcpb once CI is green on main and the
+# production dependency tree changed since the last tag — so merged Dependabot
+# fixes reach users without a manual `npm run release`. See scripts/ci-release.js.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Build the bundle and upload it as an artifact, publish nothing
+        type: boolean
+        default: true
+      force:
+        description: Release even if production dependencies are unchanged
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+# Never run two releases at once — both would pick the same next version.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    # Only CI runs for commits on main itself (push, or the dispatch that
+    # dependabot-auto-merge.yml fires) — never pull_request runs.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_branch == 'main' &&
+       contains(fromJSON('["push", "workflow_dispatch"]'), github.event.workflow_run.event))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24.x'
+
+      - name: Use npm 11
+        run: npm install -g npm@11
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Release
+        id: release
+        run: |
+          args=()
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            [ "$DRY_RUN" = "true" ] && args+=(--dry-run)
+            [ "$FORCE" = "true" ] && args+=(--force)
+          fi
+          node scripts/ci-release.js "${args[@]}"
+        env:
+          EVENT: ${{ github.event_name }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          FORCE: ${{ inputs.force }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload bundle
+        if: steps.release.outputs.version != ''
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: panos-mcp-${{ steps.release.outputs.version }}
+          path: panos-mcp.mcpb
+          if-no-files-found: error
