@@ -5,6 +5,8 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # Dispatched by dependabot-auto-merge.yml after it merges a PR.
+  workflow_dispatch:
 
 permissions:
   contents: read

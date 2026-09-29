@@ -1,0 +1,43 @@
+name: Dependabot auto-merge
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, closed]
+
+permissions:
+  contents: read
+
+jobs:
+  # Queue patch/minor updates (security ones included) to merge once the required CI check
+  # passes. Majors stay open for a human: they can change runtime behavior
+  # (e.g. @napi-rs/keyring 2.0 started throwing on keychain errors).
+  enable:
+    if: github.event.action != 'closed' && github.actor == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Fetch Dependabot metadata
+        id: meta
+        uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
+
+      - name: Enable auto-merge
+        if: steps.meta.outputs.update-type != 'version-update:semver-major'
+        run: gh pr merge --auto --squash "$PR_URL"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # A merge made through GITHUB_TOKEN doesn't fire the push-triggered CI run,
+  # and scripts/release.js refuses to release a HEAD without one. Dispatch it.
+  ci-on-main:
+    if: github.event.action == 'closed' && github.event.pull_request.merged && github.event.pull_request.user.login == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - name: Run CI on main
+        run: gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref main
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
