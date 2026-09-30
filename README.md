@@ -40,7 +40,7 @@ Talk to your firewall in plain English. Some examples:
 
 - Node.js 22.19+
 - A PanOS firewall or Panorama appliance with API access enabled
-- A PanOS API key ([how to generate](https://docs.paloaltonetworks.com/pan-os/11-1/pan-os-panorama-api/get-started-with-the-pan-os-xml-api/get-your-api-key))
+- A PanOS API key ([how to generate](https://docs.paloaltonetworks.com/ngfw/api/api-authentication-and-security/generate-api-key))
 
 To generate a PanOS API key directly from a firewall, use the XML API keygen endpoint:
 
@@ -181,7 +181,7 @@ Generate a PanOS API key from the firewall web UI or CLI:
 curl -k 'https://YOUR-FIREWALL/api/?type=keygen&user=admin&password=YOUR-PASSWORD'
 ```
 
-See [PanOS documentation](https://docs.paloaltonetworks.com/pan-os/11-1/pan-os-panorama-api/get-started-with-the-pan-os-xml-api/get-your-api-key) for details.
+See [PanOS documentation](https://docs.paloaltonetworks.com/ngfw/api/api-authentication-and-security/generate-api-key) for details.
 
 ## Proxy support
 
