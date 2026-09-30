@@ -50,6 +50,10 @@ jobs:
       - name: Test
         run: npm test
 
+      # Vitest strips types without checking them, so test typing drifts silently.
+      - name: Typecheck tests
+        run: npx tsc -p tsconfig.test.json
+
       # The registry audit endpoints flake (503s, 400s, timeouts). Retry only
       # that failure mode — a real advisory fails the gate on the first pass.
       - name: Audit production dependencies

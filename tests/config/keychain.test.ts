@@ -6,9 +6,9 @@ import { Entry } from "@napi-rs/keyring";
 import { getKey, setKey, deleteKey } from "../../src/config/keychain.js";
 
 describe("keychain", () => {
-  const mockGetPassword = vi.fn<[], string | null>(() => null);
-  const mockSetPassword = vi.fn<[string], void>();
-  const mockDeletePassword = vi.fn<[], boolean>(() => true);
+  const mockGetPassword = vi.fn<() => string | null>(() => null);
+  const mockSetPassword = vi.fn<(password: string) => void>();
+  const mockDeletePassword = vi.fn<() => boolean>(() => true);
 
   beforeEach(() => {
     vi.clearAllMocks();
