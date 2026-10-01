@@ -93,7 +93,7 @@ claude mcp add panos -- npx -y github:apius-tech/Palo-MCP \
 
 ### Claude plugin (Claude Code and Cowork)
 
-The [`claude-plugin`](https://github.com/apius-tech/Palo-MCP/tree/claude-plugin) branch holds a ready-to-install Claude plugin, **`apius-panos`**. It bundles this server with a skill that makes Claude stage changes and ask before committing. Every release updates it. To try it:
+The [`claude-plugin`](https://github.com/apius-tech/Palo-MCP/tree/claude-plugin) branch holds a ready-to-install Claude plugin, **`panos-mcp`**. It bundles this server with a skill that makes Claude stage changes and ask before committing. Every release updates it. To try it:
 
 ```bash
 git clone --branch claude-plugin --depth 1 https://github.com/apius-tech/Palo-MCP.git panos-plugin

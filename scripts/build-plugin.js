@@ -1,4 +1,4 @@
-// Assembles the Claude plugin (directory listing "apius-panos") into
+// Assembles the Claude plugin (directory listing "panos-mcp") into
 // build/plugin/ from the sources in plugin/ plus a fresh server bundle.
 //
 // The result is what users install, so it's built from an explicit file list

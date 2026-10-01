@@ -1,4 +1,4 @@
-# PAN-OS by Apius
+# PanOS MCP
 
 Inspect and manage Palo Alto Networks PA-Series firewalls and Panorama from a conversation with Claude. The plugin runs the open-source [PanOS MCP server](https://github.com/apius-tech/Palo-MCP) locally and gives Claude 117 tools across security and NAT policy, address and service objects, routing, User-ID, IPSec and GlobalProtect VPN, logs, WildFire, certificates and decryption, licenses, and Panorama device groups and templates. It also ships a skill that makes Claude stage changes, show you the diff, and commit only after you confirm.
 

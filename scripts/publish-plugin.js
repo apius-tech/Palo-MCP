@@ -48,7 +48,7 @@ const identity = inCi
     }
   : {};
 
-const { version } = JSON.parse(readFileSync(`${PLUGIN_DIR}/.claude-plugin/plugin.json`, "utf8"));
+const { name, version } = JSON.parse(readFileSync(`${PLUGIN_DIR}/.claude-plugin/plugin.json`, "utf8"));
 const sourceSha = mustGit(["rev-parse", "HEAD"]);
 
 // The branch may not exist yet; the first publish creates it as an orphan.
@@ -81,7 +81,7 @@ if (parent && mustGit(["rev-parse", `${parent}^{tree}`]) === tree) {
   process.exit(0);
 }
 
-const message = `apius-panos v${version}\n\nBuilt from ${sourceSha} by scripts/publish-plugin.js.`;
+const message = `${name} v${version}\n\nBuilt from ${sourceSha} by scripts/publish-plugin.js.`;
 const commit = mustGit(
   ["commit-tree", tree, ...(parent ? ["-p", parent] : []), "-m", message],
   identity
