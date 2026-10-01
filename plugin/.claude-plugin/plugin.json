@@ -2,11 +2,23 @@
   "name": "panos-mcp",
   "displayName": "PanOS MCP",
   "description": "Inspect and manage Palo Alto Networks PA-Series firewalls and Panorama from Claude: security and NAT policies, objects, routing, VPN, logs, WildFire, GlobalProtect, and decryption, with staged commits and read-only inspection. 117 tools, running locally against your own firewall's XML API.",
-  "author": { "name": "Apius Technologies SA", "url": "https://github.com/apius-tech" },
+  "author": {
+    "name": "Apius Technologies SA",
+    "url": "https://github.com/apius-tech"
+  },
   "homepage": "https://github.com/apius-tech/Palo-MCP",
   "repository": "https://github.com/apius-tech/Palo-MCP",
+  "documentationUrl": "https://github.com/apius-tech/Palo-MCP/blob/main/plugin/README.md",
+  "privacyPolicyUrl": "https://github.com/apius-tech/Palo-MCP#privacy",
+  "supportUrl": "https://github.com/apius-tech/Palo-MCP/issues",
   "license": "MIT",
-  "keywords": ["palo-alto", "pan-os", "panorama", "firewall", "network-security"],
+  "keywords": [
+    "palo-alto",
+    "pan-os",
+    "panorama",
+    "firewall",
+    "network-security"
+  ],
   "userConfig": {
     "host": {
       "type": "string",
