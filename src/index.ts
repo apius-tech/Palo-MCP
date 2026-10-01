@@ -25,7 +25,7 @@ import { registerUtilityTools } from "./tools/utility.js";
 
 const server = new McpServer({
   name: "panos-mcp",
-  version: "1.3.38",
+  version: "1.3.39",
 });
 
 // Wrap all tool handlers to catch unexpected errors cleanly
