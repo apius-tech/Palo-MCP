@@ -6,7 +6,7 @@ Inspect and manage Palo Alto Networks PA-Series firewalls and Panorama from a co
 
 ## Where it runs
 
-The MCP server is a local process started with `node`, so you need **Node.js 18 or later on your PATH**.
+The MCP server is a local process started with `node`, so you need **Node.js 22.19 or later on your PATH**.
 
 - **Claude Code**: fully supported. Claude Code prompts for the firewall host and API key when you enable the plugin.
 - **Cowork (sessions on your computer)**: supported, but Cowork doesn't prompt for settings. Configure your firewalls in `~/.config/panos-mcp/firewalls.json` (see below).
