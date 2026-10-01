@@ -6,7 +6,7 @@
 // workflow token can't push to it. The bump lives only in the tag and the
 // bundle; the next local release catches package.json up (see version.js).
 //
-// Flags: --dry-run builds the bundle but publishes nothing.
+// Flags: --dry-run builds the bundle and the plugin but publishes nothing.
 //        --force releases even when production dependencies are unchanged.
 import { spawnSync } from "child_process";
 import { appendFileSync } from "fs";
@@ -54,6 +54,7 @@ const newVersion = nextVersion("patch");
 const newTag = `v${newVersion}`;
 applyVersion(newVersion);
 run("npm", ["run", "pack:extension"]);
+run("npm", ["run", "build:plugin"]);
 output("version", newVersion);
 
 const log = capture("git", ["log", `${oldTag}..HEAD`, "--oneline"]);
@@ -61,6 +62,7 @@ const changelog = log.stdout || "(no commits found since previous tag)";
 
 if (dryRun) {
   console.log(`[dry-run] Would release ${newTag} at ${sha.slice(0, 7)}:\n${changelog}`);
+  run("node", ["scripts/publish-plugin.js", "--dry-run"]);
   output("released", "false");
   process.exit(0);
 }
@@ -77,6 +79,10 @@ run("gh", [
 if (capture("gh", ["release", "view", oldTag]).status === 0) {
   run("gh", ["release", "delete", oldTag, "--yes"]);
 }
+
+// The plugin directory tracks the claude-plugin branch, so Dependabot fixes
+// reach plugin users too — main stays untouched (see publish-plugin.js).
+run("node", ["scripts/publish-plugin.js"]);
 
 output("released", "true");
 console.log(`Released ${newTag}`);

@@ -50,6 +50,10 @@ jobs:
       - name: Test
         run: npm test
 
+      # Assemble the Claude plugin so a broken build-plugin.js fails here, not at release.
+      - name: Build plugin
+        run: node scripts/build-plugin.js
+
       # Vitest strips types without checking them, so test typing drifts silently.
       - name: Typecheck tests
         run: npx tsc -p tsconfig.test.json

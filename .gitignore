@@ -6,3 +6,4 @@ extension/
 .env
 firewalls.json
 *.test.tmp.json
+build/

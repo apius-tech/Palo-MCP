@@ -143,4 +143,8 @@ run("gh", [
   "--notes", `Changes since ${oldTag}:\n\n${changelog}`,
 ]);
 
+// Ship the same version to the claude-plugin branch the plugin directory tracks.
+run("npm", ["run", "build:plugin"]);
+run("node", ["scripts/publish-plugin.js"]);
+
 console.log(`Released ${newTag}`);

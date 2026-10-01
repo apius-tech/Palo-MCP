@@ -20,7 +20,8 @@
     "bundle": "node scripts/bundle.js",
     "pack:extension": "npm run build && npm run bundle && node scripts/pack-extension.js",
     "release": "node scripts/release.js",
-    "prepare": "npm run build"
+    "prepare": "npm run build",
+    "build:plugin": "npm run build && node scripts/build-plugin.js"
   },
   "keywords": [
     "mcp",
