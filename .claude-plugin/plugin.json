@@ -1,0 +1,35 @@
+{
+  "name": "apius-panos",
+  "version": "1.3.36",
+  "displayName": "PAN-OS by Apius",
+  "description": "Inspect and manage Palo Alto Networks PA-Series firewalls and Panorama from Claude: security and NAT policies, objects, routing, VPN, logs, WildFire, GlobalProtect, and decryption, with staged commits and read-only inspection. 117 tools, running locally against your own firewall's XML API.",
+  "author": {
+    "name": "Apius Technologies SA",
+    "url": "https://github.com/apius-tech"
+  },
+  "homepage": "https://github.com/apius-tech/Palo-MCP",
+  "repository": "https://github.com/apius-tech/Palo-MCP",
+  "license": "MIT",
+  "keywords": [
+    "palo-alto",
+    "pan-os",
+    "panorama",
+    "firewall",
+    "network-security"
+  ],
+  "userConfig": {
+    "host": {
+      "type": "string",
+      "title": "Firewall host",
+      "description": "Hostname or IP of your PAN-OS firewall or Panorama, e.g. fw.example.com. Leave empty to use ~/.config/panos-mcp/firewalls.json instead.",
+      "default": ""
+    },
+    "api_key": {
+      "type": "string",
+      "title": "API key",
+      "description": "PAN-OS XML API key for that host. Stored in your system's secure credential store. Prefer a key for a read-only admin role.",
+      "sensitive": true,
+      "default": ""
+    }
+  }
+}
