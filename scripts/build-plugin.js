@@ -13,6 +13,8 @@ import { spawnSync } from "child_process";
 const PLUGIN_DIR = "build/plugin";
 
 const FILES = [
+  // The directory reads the listing icon from here only on the first save.
+  ["plugin/.claude-plugin/icon.png", ".claude-plugin/icon.png"],
   ["plugin/.mcp.json", ".mcp.json"],
   ["plugin/README.md", "README.md"],
   ["plugin/skills", "skills"],
