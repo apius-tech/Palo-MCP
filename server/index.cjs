@@ -75231,7 +75231,7 @@ function registerUtilityTools(server2) {
 // dist/index.js
 var server = new McpServer({
   name: "panos-mcp",
-  version: "1.3.37"
+  version: "1.3.38"
 });
 var _tool = server.tool.bind(server);
 server.tool = function(...args) {
