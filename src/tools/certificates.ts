@@ -61,6 +61,7 @@ export function registerCertificatesTools(server: McpServer) {
       from_zones: z.array(z.string().min(1)).min(1).describe("Source zones"),
       to_zones: z.array(z.string().min(1)).min(1).describe("Destination zones"),
       source: z.array(z.string().min(1)).min(1).describe("Source addresses or 'any'"),
+      source_user: z.array(z.string().min(1)).optional().describe("Source users or groups (e.g. ['example\\jdoe', 'cn=admins,ou=groups,dc=example,dc=com']) or 'any', 'known-user', 'unknown', 'pre-logon'. Omit for PanOS default (any)."),
       destination: z.array(z.string().min(1)).min(1).describe("Destination addresses or 'any'"),
       service: z.array(z.string().min(1)).min(1).describe("Services or 'any'"),
       action: z.enum(["decrypt", "no-decrypt"]).describe("Decrypt or pass through"),
@@ -71,7 +72,7 @@ export function registerCertificatesTools(server: McpServer) {
       firewall: firewallName,
     },
     { title: "Add Decryption Rule", readOnlyHint: false, destructiveHint: true },
-    async ({ name, from_zones, to_zones, source, destination, service, action, type, decryption_profile, description, disabled, firewall }) => {
+    async ({ name, from_zones, to_zones, source, source_user, destination, service, action, type, decryption_profile, description, disabled, firewall }) => {
       const target = resolveTarget(firewall);
       if (isApiError(target)) return formatResponse(target);
       const xpath = "/config/devices/entry[@name='localhost.localdomain']/vsys/entry[@name='vsys1']/rulebase/decryption/rules";
@@ -79,6 +80,7 @@ export function registerCertificatesTools(server: McpServer) {
       element += `<from>${members(from_zones)}</from>`;
       element += `<to>${members(to_zones)}</to>`;
       element += `<source>${members(source)}</source>`;
+      if (source_user && source_user.length > 0) element += `<source-user>${members(source_user)}</source-user>`;
       element += `<destination>${members(destination)}</destination>`;
       element += `<service>${members(service)}</service>`;
       element += `<action>${action}</action>`;

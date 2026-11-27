@@ -343,6 +343,7 @@ export function registerPanoramaTools(server: McpServer) {
       from_zones: z.array(z.string().min(1)).min(1).describe("Source zones (e.g. ['trust', 'dmz'])"),
       to_zones: z.array(z.string().min(1)).min(1).describe("Destination zones (e.g. ['untrust'])"),
       source: z.array(z.string().min(1)).min(1).describe("Source addresses or 'any'"),
+      source_user: z.array(z.string().min(1)).optional().describe("Source users or groups (e.g. ['example\\jdoe', 'cn=admins,ou=groups,dc=example,dc=com']) or 'any', 'known-user', 'unknown', 'pre-logon'. Omit for PanOS default (any)."),
       destination: z.array(z.string().min(1)).min(1).describe("Destination addresses or 'any'"),
       application: z.array(z.string().min(1)).min(1).describe("Applications (e.g. ['web-browsing', 'ssl']) or 'any'"),
       service: z.array(z.string().min(1)).min(1).describe("Services (e.g. ['application-default']) or 'any'"),
@@ -356,7 +357,7 @@ export function registerPanoramaTools(server: McpServer) {
       firewall: firewallName,
     },
     { title: "Panorama Add Pre Rule", readOnlyHint: false, destructiveHint: true },
-    async ({ device_group, name, from_zones, to_zones, source, destination, application, service, action, log_end, log_start, profile_group, description, disabled, tag, firewall }) => {
+    async ({ device_group, name, from_zones, to_zones, source, source_user, destination, application, service, action, log_end, log_start, profile_group, description, disabled, tag, firewall }) => {
       const target = resolveTarget(firewall);
       if (isApiError(target)) return formatResponse(target);
       const xpath = `/config/devices/entry[@name='localhost.localdomain']/device-group/entry[@name='${device_group}']/pre-rulebase/security/rules`;
@@ -364,6 +365,7 @@ export function registerPanoramaTools(server: McpServer) {
       element += `<from>${members(from_zones)}</from>`;
       element += `<to>${members(to_zones)}</to>`;
       element += `<source>${members(source)}</source>`;
+      if (source_user && source_user.length > 0) element += `<source-user>${members(source_user)}</source-user>`;
       element += `<destination>${members(destination)}</destination>`;
       element += `<application>${members(application)}</application>`;
       element += `<service>${members(service)}</service>`;
@@ -432,6 +434,7 @@ export function registerPanoramaTools(server: McpServer) {
       from_zones: z.array(z.string().min(1)).min(1).describe("Source zones (e.g. ['trust', 'dmz'])"),
       to_zones: z.array(z.string().min(1)).min(1).describe("Destination zones (e.g. ['untrust'])"),
       source: z.array(z.string().min(1)).min(1).describe("Source addresses or 'any'"),
+      source_user: z.array(z.string().min(1)).optional().describe("Source users or groups (e.g. ['example\\jdoe', 'cn=admins,ou=groups,dc=example,dc=com']) or 'any', 'known-user', 'unknown', 'pre-logon'. Omit for PanOS default (any)."),
       destination: z.array(z.string().min(1)).min(1).describe("Destination addresses or 'any'"),
       application: z.array(z.string().min(1)).min(1).describe("Applications (e.g. ['web-browsing', 'ssl']) or 'any'"),
       service: z.array(z.string().min(1)).min(1).describe("Services (e.g. ['application-default']) or 'any'"),
@@ -445,7 +448,7 @@ export function registerPanoramaTools(server: McpServer) {
       firewall: firewallName,
     },
     { title: "Panorama Add Post Rule", readOnlyHint: false, destructiveHint: true },
-    async ({ device_group, name, from_zones, to_zones, source, destination, application, service, action, log_end, log_start, profile_group, description, disabled, tag, firewall }) => {
+    async ({ device_group, name, from_zones, to_zones, source, source_user, destination, application, service, action, log_end, log_start, profile_group, description, disabled, tag, firewall }) => {
       const target = resolveTarget(firewall);
       if (isApiError(target)) return formatResponse(target);
       const xpath = `/config/devices/entry[@name='localhost.localdomain']/device-group/entry[@name='${device_group}']/post-rulebase/security/rules`;
@@ -453,6 +456,7 @@ export function registerPanoramaTools(server: McpServer) {
       element += `<from>${members(from_zones)}</from>`;
       element += `<to>${members(to_zones)}</to>`;
       element += `<source>${members(source)}</source>`;
+      if (source_user && source_user.length > 0) element += `<source-user>${members(source_user)}</source-user>`;
       element += `<destination>${members(destination)}</destination>`;
       element += `<application>${members(application)}</application>`;
       element += `<service>${members(service)}</service>`;
