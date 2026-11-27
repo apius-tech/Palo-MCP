@@ -7320,6 +7320,7 @@ var require_symbols = __commonJS({
       kMaxResponseSize: /* @__PURE__ */ Symbol("max response size"),
       kHTTP2Session: /* @__PURE__ */ Symbol("http2Session"),
       kHTTP2Options: /* @__PURE__ */ Symbol("http2 options"),
+      kQueuedAbort: /* @__PURE__ */ Symbol("queued abort"),
       kHTTP2SessionState: /* @__PURE__ */ Symbol("http2Session state"),
       kRetryHandlerDefaultRetry: /* @__PURE__ */ Symbol("retry agent default retry"),
       kConstruct: /* @__PURE__ */ Symbol("constructable"),
@@ -7337,7 +7338,8 @@ var require_symbols = __commonJS({
       kNoProxyAgent: /* @__PURE__ */ Symbol("no proxy agent"),
       kHttpProxyAgent: /* @__PURE__ */ Symbol("http proxy agent"),
       kHttpsProxyAgent: /* @__PURE__ */ Symbol("https proxy agent"),
-      kSocks5ProxyAgent: /* @__PURE__ */ Symbol("socks5 proxy agent")
+      kSocks5ProxyAgent: /* @__PURE__ */ Symbol("socks5 proxy agent"),
+      kInterceptorKind: /* @__PURE__ */ Symbol("interceptor kind")
     };
   }
 });
@@ -10927,7 +10929,7 @@ var require_util3 = __commonJS({
       }
       return url2;
     }
-    var isPotentialleTrustworthyIPv4 = RegExp.prototype.test.bind(/^127\.(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]\d|\d)\.){2}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]\d|\d)$/);
+    var isPotentiallyTrustworthyIPv4 = RegExp.prototype.test.bind(/^127\.(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]\d|\d)\.){2}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]\d|\d)$/);
     var isPotentiallyTrustworthyIPv6 = RegExp.prototype.test.bind(/^(?:(?:0{1,4}:){7}|(?:0{1,4}:){1,6}:|::)0{0,3}1$/);
     function isOriginIPPotentiallyTrustworthy(origin) {
       if (origin.includes(":")) {
@@ -10936,7 +10938,7 @@ var require_util3 = __commonJS({
         }
         return isPotentiallyTrustworthyIPv6(origin);
       }
-      return isPotentialleTrustworthyIPv4(origin);
+      return isPotentiallyTrustworthyIPv4(origin);
     }
     function isOriginPotentiallyTrustworthy(origin) {
       if (origin == null || origin === "null") {
@@ -11705,6 +11707,8 @@ var require_request = __commonJS({
     var kHandler = /* @__PURE__ */ Symbol("handler");
     var kController = /* @__PURE__ */ Symbol("controller");
     var kResume = /* @__PURE__ */ Symbol("resume");
+    function noop() {
+    }
     var RequestController = class {
       #paused = false;
       #reason = null;
@@ -12028,11 +12032,23 @@ var require_request = __commonJS({
           this.endHandler = null;
         }
       }
+      // Fails a request that was aborted before it reached a connection. The
+      // handler gets an aborted controller, so wrappers such as RetryHandler can
+      // tell a caller abort apart from a retryable connection failure.
+      onQueuedAbort(reason) {
+        this[kController] = createAbortedController(reason);
+        return this.onResponseError(reason);
+      }
       addHeader(key, value) {
         processHeader(this, key, value);
         return this;
       }
     };
+    function createAbortedController(reason) {
+      const controller = new RequestController(noop);
+      controller.abort(reason);
+      return controller;
+    }
     function processHeader(request, key, val) {
       if (val && (typeof val === "object" && !Array.isArray(val))) {
         throw new InvalidArgumentError(`invalid ${key} header`);
@@ -12129,6 +12145,7 @@ var require_request = __commonJS({
       return isFormData(body);
     }
     module2.exports = Request;
+    module2.exports.createAbortedController = createAbortedController;
   }
 });
 
@@ -12137,7 +12154,8 @@ var require_dispatcher = __commonJS({
   "node_modules/undici/lib/dispatcher/dispatcher.js"(exports2, module2) {
     "use strict";
     var EventEmitter = require("node:events");
-    var { kOriginless, kUrl } = require_symbols();
+    var { InvalidArgumentError } = require_errors2();
+    var { kOriginless, kUrl, kInterceptorKind } = require_symbols();
     var Dispatcher = class extends EventEmitter {
       dispatch() {
         throw new Error("not implemented");
@@ -12152,6 +12170,7 @@ var require_dispatcher = __commonJS({
         const interceptors = Array.isArray(args[0]) ? args[0] : args;
         const interceptorOrigin = this[kOriginless] === true ? null : this[kUrl]?.origin;
         let dispatch = this.dispatch.bind(this);
+        const orderSensitiveKinds = [];
         for (const interceptor of interceptors) {
           if (interceptor == null) {
             continue;
@@ -12159,10 +12178,18 @@ var require_dispatcher = __commonJS({
           if (typeof interceptor !== "function") {
             throw new TypeError(`invalid interceptor, expected function received ${typeof interceptor}`);
           }
+          if (interceptor[kInterceptorKind] != null) {
+            orderSensitiveKinds.push(interceptor[kInterceptorKind]);
+          }
           dispatch = interceptor(dispatch, interceptorOrigin);
           if (dispatch == null || typeof dispatch !== "function" || dispatch.length !== 2) {
             throw new TypeError("invalid interceptor");
           }
+        }
+        const cacheIndex = orderSensitiveKinds.indexOf("cache");
+        const redirectIndex = orderSensitiveKinds.indexOf("redirect");
+        if (cacheIndex !== -1 && redirectIndex !== -1 && cacheIndex < redirectIndex) {
+          throw new InvalidArgumentError("the cache interceptor must be composed after the redirect interceptor; composing the cache before the redirect disables the cache's cross-origin and credential redirect guards (GHSA-75VM-9G8F-99J4, GHSA-MQG3-3V4R-CM32, GHSA-4W7W-5XRC-9H26, GHSA-7XG3-FPHP-28HG)");
         }
         const originalDispatch = dispatch;
         const self = this;
@@ -12337,7 +12364,7 @@ var require_dispatcher_base = __commonJS({
             throw err;
           }
           handler.onResponseError(null, err);
-          return false;
+          return true;
         }
       }
     };
@@ -16584,6 +16611,7 @@ var require_client_h1 = __commonJS({
     var kIdleSocketValidation = /* @__PURE__ */ Symbol("kIdleSocketValidation");
     var kIdleSocketValidationTimeout = /* @__PURE__ */ Symbol("kIdleSocketValidationTimeout");
     var kSocketUsed = /* @__PURE__ */ Symbol("kSocketUsed");
+    var kIdleSince = /* @__PURE__ */ Symbol("kIdleSince");
     var kTypeOfService = /* @__PURE__ */ Symbol("kTypeOfService");
     var extractBody;
     function lazyllhttp() {
@@ -17355,6 +17383,10 @@ var require_client_h1 = __commonJS({
         }
       });
     }
+    function isIdleSocketExpired(socket) {
+      const parser = socket[kParser];
+      return parser.timeoutType === TIMEOUT_KEEP_ALIVE && parser.timeoutValue > 0 && performance.now() - socket[kIdleSince] >= parser.timeoutValue;
+    }
     function resumeH1(client) {
       const socket = client[kSocket];
       if (socket && !socket.destroyed) {
@@ -17366,6 +17398,10 @@ var require_client_h1 = __commonJS({
         } else if (socket[kNoRef] && socket.ref) {
           socket.ref();
           socket[kNoRef] = false;
+        }
+        if (client[kRunning] === 0 && client[kPending] > 0 && isIdleSocketExpired(socket)) {
+          util2.destroy(socket, new InformationalError("socket idle timeout"));
+          return;
         }
         if (client[kRunning] === 0 && client[kPending] > 0 && socket[kSocketUsed]) {
           if (socket[kIdleSocketValidation] === 0) {
@@ -17392,6 +17428,7 @@ var require_client_h1 = __commonJS({
         }
         if (client[kSize] === 0) {
           if (socket[kParser].timeoutType !== TIMEOUT_KEEP_ALIVE) {
+            socket[kIdleSince] = performance.now();
             socket[kParser].setTimeout(client[kKeepAliveTimeoutValue], TIMEOUT_KEEP_ALIVE);
           }
         } else if (client[kRunning] > 0 && socket[kParser].statusCode < 200) {
@@ -17943,6 +17980,7 @@ var require_client_h2 = __commonJS({
         HTTP2_HEADER_STATUS,
         HTTP2_HEADER_PROTOCOL,
         NGHTTP2_NO_ERROR,
+        NGHTTP2_PROTOCOL_ERROR,
         NGHTTP2_REFUSED_STREAM
       }
     } = http2;
@@ -19000,8 +19038,10 @@ var require_client_h2 = __commonJS({
       }
       stream.off("error", onError);
       stream.on("error", noop);
-      if (state.responseContentLength != null && state.bytesRead !== state.responseContentLength) {
-        err = new ResponseContentLengthMismatchError();
+      if ((err.code === "ERR_HTTP2_ERROR" || err.code === "ERR_HTTP2_STREAM_ERROR" && stream.rstCode === NGHTTP2_PROTOCOL_ERROR) && state.responseContentLength != null && state.bytesRead !== state.responseContentLength) {
+        const mismatch = new ResponseContentLengthMismatchError();
+        mismatch.cause = err;
+        err = mismatch;
       }
       if (typeof stream.rstCode === "number" && stream.rstCode !== NGHTTP2_NO_ERROR) {
         err.http2ErrorCode = stream.rstCode;
@@ -19297,11 +19337,13 @@ var require_client = __commonJS({
       kHostAuthority,
       kResume,
       kHTTP2Options,
-      kUseMilo
+      kUseMilo,
+      kQueuedAbort
     } = require_symbols();
     var connectH1 = require_client_h1();
     var connectH2 = require_client_h2();
     var kClosedResolve = /* @__PURE__ */ Symbol("kClosedResolve");
+    var kCancelConnect = /* @__PURE__ */ Symbol("kCancelConnect");
     var getDefaultNodeMaxHeaderSize = http && http.maxHeaderSize && Number.isInteger(http.maxHeaderSize) && http.maxHeaderSize > 0 ? () => http.maxHeaderSize : () => {
       throw new InvalidArgumentError("http module not available or http.maxHeaderSize invalid");
     };
@@ -19509,6 +19551,7 @@ var require_client = __commonJS({
         this[kClosedResolve] = null;
         this[kMaxResponseSize] = maxResponseSize > -1 ? maxResponseSize : -1;
         this[kHTTPContext] = null;
+        this[kCancelConnect] = null;
         this[kHTTP2Options] = {
           pingInterval: h2Options?.pingInterval ?? pingInterval ?? 6e4,
           connectionWindowSize: h2Options?.connectionWindowSize ?? connectionWindowSize ?? 524288,
@@ -19561,6 +19604,7 @@ var require_client = __commonJS({
       }
       [kConnect](cb) {
         connect(this);
+        this[kCancelConnect] = null;
         this.once("connect", cb);
       }
       [kDispatch](opts, handler) {
@@ -19572,6 +19616,12 @@ var require_client = __commonJS({
           queueMicrotask(() => resume(this));
         } else {
           this[kResume](true);
+        }
+        if (request.abort === null && !request.aborted) {
+          const onQueued = opts[kQueuedAbort];
+          if (onQueued !== void 0) {
+            onQueued((reason) => abortPendingRequest(this, request, reason));
+          }
         }
         if (this[kResuming] && this[kNeedDrain] !== 2 && this[kBusy]) {
           this[kNeedDrain] = 2;
@@ -19613,6 +19663,39 @@ var require_client = __commonJS({
         });
       }
     };
+    function failQueuedRequest(client, request, reason) {
+      try {
+        request.onQueuedAbort(reason);
+        assert2(request.aborted);
+      } catch (err) {
+        client.emit("error", err);
+      }
+    }
+    function abortPendingRequest(client, request, reason) {
+      if (request.aborted || request.abort !== null) {
+        return;
+      }
+      const queue = client[kQueue];
+      const idx = queue.indexOf(request, client[kPendingIdx]);
+      if (idx === -1) {
+        return;
+      }
+      if (idx === client[kPendingIdx] && client[kResuming] === 2) {
+        return;
+      }
+      queue.splice(idx, 1);
+      failQueuedRequest(client, request, reason);
+      client[kResume](true);
+      if (client[kCancelConnect] !== null && client[kSize] === 0) {
+        queueMicrotask(() => cancelUnusedConnect(client));
+      }
+    }
+    function cancelUnusedConnect(client) {
+      const cancel = client[kCancelConnect];
+      if (cancel !== null && client[kSize] === 0) {
+        cancel(new InformationalError("no request waits for this connection"));
+      }
+    }
     function onError(client, err) {
       if (client[kRunning] === 0 && err.code !== "UND_ERR_INFO" && err.code !== "UND_ERR_SOCKET") {
         assert2(client[kPendingIdx] === client[kRunningIdx]);
@@ -19638,6 +19721,8 @@ var require_client = __commonJS({
         hostname3 = ip;
       }
       client[kConnecting] = true;
+      let calledBack = false;
+      let cancelled = false;
       if (channels.beforeConnect.hasSubscribers) {
         channels.beforeConnect.publish({
           connectParams: {
@@ -19653,7 +19738,7 @@ var require_client = __commonJS({
         });
       }
       try {
-        client[kConnector]({
+        const connecting = client[kConnector]({
           host,
           hostname: hostname3,
           protocol,
@@ -19661,6 +19746,14 @@ var require_client = __commonJS({
           servername: client[kServerName],
           localAddress: client[kLocalAddress]
         }, (err, socket) => {
+          calledBack = true;
+          if (cancelled) {
+            if (socket) {
+              util2.destroy(socket.on("error", noop));
+            }
+            return;
+          }
+          client[kCancelConnect] = null;
           if (err) {
             handleConnectError(client, err, { host, hostname: hostname3, protocol, port });
             client[kResume]();
@@ -19703,6 +19796,29 @@ var require_client = __commonJS({
           client.emit("connect", client[kUrl], [client]);
           client[kResume]();
         });
+        if (!calledBack && util2.isStream(connecting)) {
+          client[kCancelConnect] = (err) => {
+            cancelled = true;
+            client[kCancelConnect] = null;
+            client[kConnecting] = false;
+            if (channels.connectError.hasSubscribers) {
+              channels.connectError.publish({
+                connectParams: {
+                  host,
+                  hostname: hostname3,
+                  protocol,
+                  port,
+                  version: client[kHTTPContext]?.version,
+                  servername: client[kServerName],
+                  localAddress: client[kLocalAddress]
+                },
+                connector: client[kConnector],
+                error: err
+              });
+            }
+            util2.destroy(connecting.on("error", noop), err);
+          };
+        }
       } catch (err) {
         handleConnectError(client, err, { host, hostname: hostname3, protocol, port });
         client[kResume]();
@@ -19913,7 +20029,8 @@ var require_pool_base = __commonJS({
     var { PoolStats } = require_stats();
     var DispatcherBase = require_dispatcher_base();
     var FixedQueue = require_fixed_queue();
-    var { kConnected, kSize, kRunning, kPending, kQueued, kBusy, kFree, kUrl, kClose, kDestroy, kDispatch } = require_symbols();
+    var { kConnected, kSize, kRunning, kPending, kQueued, kBusy, kFree, kUrl, kClose, kDestroy, kDispatch, kQueuedAbort } = require_symbols();
+    var { createAbortedController } = require_request();
     var kClients = /* @__PURE__ */ Symbol("clients");
     var kNeedDrain = /* @__PURE__ */ Symbol("needDrain");
     var kQueue = /* @__PURE__ */ Symbol("queue");
@@ -19931,11 +20048,14 @@ var require_pool_base = __commonJS({
     var kRemoveClient = /* @__PURE__ */ Symbol("remove client");
     var kRetireClient = /* @__PURE__ */ Symbol("retire client");
     var kRetiring = /* @__PURE__ */ Symbol("retiring clients");
+    var kShiftQueue = /* @__PURE__ */ Symbol("shift queue");
+    var kAbortQueued = /* @__PURE__ */ Symbol("abort queued");
     var QueuedRequest = class extends AsyncResource {
       constructor(opts, handler) {
         super("UNDICI_POOL_QUEUED_REQUEST");
         this.opts = opts;
         this.handler = handler;
+        this.queued = true;
       }
       dispatch(dispatcher) {
         return this.runInAsyncScope(dispatcher.dispatch, dispatcher, this.opts, this.handler);
@@ -19966,21 +20086,19 @@ var require_pool_base = __commonJS({
         if (client.closed || client.destroyed) {
           return;
         }
-        const queue = this[kQueue];
         let needDrain = false;
         this[kOnClientDrain](client);
         while (!needDrain) {
-          const item = queue.shift();
+          const item = this[kShiftQueue]();
           if (!item) {
             break;
           }
-          this[kQueued]--;
           needDrain = !item.dispatch(client);
         }
         client[kNeedDrain] = needDrain;
         if (needDrain) {
           this[kOnClientBusy](client);
-          if (!queue.isEmpty()) {
+          if (this[kQueued] > 0) {
             return this[kDrainQueue](origin, targets);
           }
         }
@@ -19988,7 +20106,7 @@ var require_pool_base = __commonJS({
           this[kNeedDrain] = false;
           this.emit("drain", origin, [this, ...targets]);
         }
-        if (this[kClosedResolve] && queue.isEmpty()) {
+        if (this[kClosedResolve] && this[kQueued] === 0) {
           return closeClients(this).then(this[kClosedResolve]);
         }
       }
@@ -19997,20 +20115,26 @@ var require_pool_base = __commonJS({
       [kOnClientDrain]() {
       }
       [kDrainQueue](origin, targets) {
-        const queue = this[kQueue];
         let hasDispatcher = true;
-        while (!queue.isEmpty()) {
-          const dispatcher = this[kGetDispatcher]();
+        while (this[kQueued] > 0) {
+          let dispatcher;
+          try {
+            dispatcher = this[kGetDispatcher]();
+          } catch (err) {
+            const item2 = this[kShiftQueue]();
+            item2.runInAsyncScope(item2.handler.onResponseError, item2.handler, null, err);
+            hasDispatcher = !this.destroyed && this[kHasDispatcher](false);
+            continue;
+          }
           if (!dispatcher) {
             hasDispatcher = false;
             break;
           }
-          const item = queue.shift();
-          this[kQueued]--;
+          const item = this[kShiftQueue]();
           if (!item.dispatch(dispatcher)) {
             dispatcher[kNeedDrain] = true;
             this[kOnClientBusy](dispatcher);
-            hasDispatcher = this[kHasDispatcher]();
+            hasDispatcher = this[kHasDispatcher](false);
             if (!hasDispatcher) {
               break;
             }
@@ -20020,8 +20144,38 @@ var require_pool_base = __commonJS({
           this[kNeedDrain] = false;
           this.emit("drain", origin, [this, ...targets]);
         }
-        if (this[kClosedResolve] && queue.isEmpty()) {
+        if (this[kClosedResolve] && this[kQueued] === 0) {
           return closeClients(this).then(this[kClosedResolve]);
+        }
+      }
+      // Aborted requests stay in the queue as tombstones (queued === false) and
+      // are skipped here; kQueued only counts the live ones.
+      [kShiftQueue]() {
+        const queue = this[kQueue];
+        let item = queue.shift();
+        while (item !== null && item.queued === false) {
+          item = queue.shift();
+        }
+        if (item !== null) {
+          this[kQueued]--;
+          item.queued = false;
+        }
+        return item;
+      }
+      // Called through the handler's kQueuedAbort hook when a queued request is
+      // aborted.
+      [kAbortQueued](item, reason) {
+        if (!item.queued) {
+          return;
+        }
+        const { handler } = item;
+        item.queued = false;
+        item.opts = null;
+        item.handler = null;
+        this[kQueued]--;
+        item.runInAsyncScope(handler.onResponseError, handler, createAbortedController(reason), reason);
+        if (this[kClosedResolve] && this[kQueued] === 0) {
+          closeClients(this).then(this[kClosedResolve]);
         }
       }
       [kOnConnect] = (origin, targets) => {
@@ -20075,7 +20229,7 @@ var require_pool_base = __commonJS({
         return new PoolStats(this);
       }
       [kClose]() {
-        if (this[kQueue].isEmpty()) {
+        if (this[kQueued] === 0) {
           return closeClients(this);
         } else {
           return new Promise((resolve) => {
@@ -20085,7 +20239,7 @@ var require_pool_base = __commonJS({
       }
       [kDestroy](err) {
         while (true) {
-          const item = this[kQueue].shift();
+          const item = this[kShiftQueue]();
           if (!item) {
             break;
           }
@@ -20103,9 +20257,14 @@ var require_pool_base = __commonJS({
       [kDispatch](opts, handler) {
         const dispatcher = this[kGetDispatcher]();
         if (!dispatcher) {
+          const item = new QueuedRequest(opts, handler);
           this[kNeedDrain] = true;
-          this[kQueue].push(new QueuedRequest(opts, handler));
+          this[kQueue].push(item);
           this[kQueued]++;
+          const onQueued = opts[kQueuedAbort];
+          if (onQueued !== void 0) {
+            onQueued((reason) => this[kAbortQueued](item, reason));
+          }
         } else if (!dispatcher.dispatch(opts, handler)) {
           dispatcher[kNeedDrain] = true;
           this[kOnClientBusy](dispatcher);
@@ -20203,7 +20362,7 @@ var require_pool = __commonJS({
       InvalidArgumentError
     } = require_errors2();
     var util2 = require_util2();
-    var { kConnecting, kHTTPContext, kUrl, kQueued } = require_symbols();
+    var { kConnecting, kHTTPContext, kHTTP2Session, kRemoteSettings, kUrl, kQueued } = require_symbols();
     var buildConnector = require_connect();
     var kOptions = /* @__PURE__ */ Symbol("options");
     var kConnections = /* @__PURE__ */ Symbol("connections");
@@ -20279,9 +20438,19 @@ var require_pool = __commonJS({
             this[kProtocol] = client[kHTTPContext]?.version;
           }
           if (client === this[kProtocolProbe]) {
-            if (this[kProtocol] !== "h2") {
-              this[kProtocolProbe] = null;
-              this[kDrainQueue](origin2, targets.slice(1));
+            const releaseProbe = () => {
+              if (client === this[kProtocolProbe]) {
+                this[kProtocolProbe] = null;
+                if (!this.destroyed && (this[kQueued] > 0 || !this.closed && this[kHasDispatcher](false))) {
+                  this[kDrainQueue](origin2, targets.slice(1));
+                }
+              }
+            };
+            const session = client[kHTTP2Session];
+            if (this[kProtocol] !== "h2" || session[kRemoteSettings]) {
+              releaseProbe();
+            } else {
+              session.once("remoteSettings", releaseProbe);
             }
           }
         });
@@ -20335,7 +20504,7 @@ var require_pool = __commonJS({
           return createClient(this);
         }
       }
-      [kHasDispatcher]() {
+      [kHasDispatcher](create = true) {
         const clientTtlOption = this[kOptions].clientTtl;
         for (let i = 0; i < this[kClients].length; i++) {
           const client = this[kClients][i];
@@ -20350,7 +20519,7 @@ var require_pool = __commonJS({
           return false;
         }
         if (!this[kConnections] || this[kClients].length < this[kConnections]) {
-          createClient(this);
+          if (create) createClient(this);
           return true;
         }
         return false;
@@ -22121,7 +22290,7 @@ var require_retry_handler = __commonJS({
   "node_modules/undici/lib/handler/retry-handler.js"(exports2, module2) {
     "use strict";
     var assert2 = require("node:assert");
-    var { kRetryHandlerDefaultRetry } = require_symbols();
+    var { kRetryHandlerDefaultRetry, kQueuedAbort } = require_symbols();
     var { RequestRetryError, RequestAbortedError } = require_errors2();
     var {
       hasSafeIterator,
@@ -22205,6 +22374,10 @@ var require_retry_handler = __commonJS({
       }
     };
     var RetryHandler = class _RetryHandler {
+      // Takes the retry that waits for a connection out of its queue.
+      #queuedCancel = null;
+      // Whether retries are dispatched with a hook that sets #queuedCancel.
+      #tracksQueuedRetry = false;
       constructor(opts, { dispatch, handler }) {
         const { retryOptions, ...dispatchOpts } = opts;
         const {
@@ -22545,6 +22718,14 @@ var require_retry_handler = __commonJS({
             headers: buildResumeHeaders(this.opts.headers, `bytes=${this.start}-${this.end ?? ""}`, this.etag)
           };
         }
+        if (!this.#tracksQueuedRetry) {
+          this.#tracksQueuedRetry = true;
+          const onQueued = this.opts[kQueuedAbort];
+          this.opts[kQueuedAbort] = (cancel) => {
+            this.#queuedCancel = cancel;
+            onQueued?.(cancel);
+          };
+        }
         try {
           this.retryCountCheckpoint = this.retryCount;
           this.dispatch(this.opts, this);
@@ -22588,6 +22769,11 @@ var require_retry_handler = __commonJS({
         ) ?? null;
       }
       #onAbort(reason) {
+        const cancel = this.#queuedCancel;
+        if (cancel !== null) {
+          this.#queuedCancel = null;
+          cancel(reason ?? new RequestAbortedError());
+        }
         if (!this.retryPending) {
           return;
         }
@@ -23144,6 +23330,89 @@ var require_readable = __commonJS({
   }
 });
 
+// node_modules/undici/lib/api/abort-signal.js
+var require_abort_signal = __commonJS({
+  "node_modules/undici/lib/api/abort-signal.js"(exports2, module2) {
+    "use strict";
+    var { addAbortListener } = require_util2();
+    var { RequestAbortedError } = require_errors2();
+    var { kQueuedAbort } = require_symbols();
+    var kListener = /* @__PURE__ */ Symbol("kListener");
+    var kSignal = /* @__PURE__ */ Symbol("kSignal");
+    function abort(self) {
+      self.reason = self[kSignal]?.reason ?? new RequestAbortedError();
+      if (self.abort) {
+        self.abort(self.reason);
+      }
+      removeSignal(self);
+    }
+    function addSignal(self, signal) {
+      self.reason = null;
+      self[kSignal] = null;
+      self[kListener] = null;
+      if (!signal) {
+        return;
+      }
+      if (signal.aborted) {
+        self.reason = signal.reason ?? new RequestAbortedError();
+        return;
+      }
+      self[kSignal] = signal;
+      self[kListener] = () => {
+        abort(self);
+      };
+      addAbortListener(self[kSignal], self[kListener]);
+    }
+    function removeSignal(self) {
+      if (!self[kSignal]) {
+        return;
+      }
+      if ("removeEventListener" in self[kSignal]) {
+        self[kSignal].removeEventListener("abort", self[kListener]);
+      } else {
+        self[kSignal].removeListener("abort", self[kListener]);
+      }
+      self[kSignal] = null;
+      self[kListener] = null;
+    }
+    function queuedAbortHook(handler) {
+      let started = null;
+      let installed = null;
+      return (cancel) => {
+        if (handler.reason) {
+          cancel(handler.reason);
+          return;
+        }
+        if (handler.abort !== installed) {
+          started = handler.abort;
+        }
+        if (started === null) {
+          installed = cancel;
+        } else {
+          const abortStarted = started;
+          installed = (reason) => {
+            abortStarted(reason);
+            cancel(reason);
+          };
+        }
+        handler.abort = installed;
+      };
+    }
+    function dispatchWithSignal(dispatcher, opts, handler) {
+      if (handler.reason) {
+        handler.onResponseError(null, handler.reason);
+        return;
+      }
+      dispatcher.dispatch({ ...opts, [kQueuedAbort]: queuedAbortHook(handler) }, handler);
+    }
+    module2.exports = {
+      addSignal,
+      removeSignal,
+      dispatchWithSignal
+    };
+  }
+});
+
 // node_modules/undici/lib/api/api-request.js
 var require_api_request = __commonJS({
   "node_modules/undici/lib/api/api-request.js"(exports2, module2) {
@@ -23153,6 +23422,7 @@ var require_api_request = __commonJS({
     var { Readable } = require_readable();
     var { InvalidArgumentError, RequestAbortedError } = require_errors2();
     var util2 = require_util2();
+    var { dispatchWithSignal } = require_abort_signal();
     function noop() {
     }
     var RequestHandler = class extends AsyncResource {
@@ -23177,6 +23447,9 @@ var require_api_request = __commonJS({
           if (onInfo && typeof onInfo !== "function") {
             throw new InvalidArgumentError("invalid onInfo callback");
           }
+          if (signal?.aborted) {
+            throw signal.reason ?? new RequestAbortedError();
+          }
           super("UNDICI_REQUEST");
         } catch (err) {
           if (util2.isStream(body)) {
@@ -23198,9 +23471,7 @@ var require_api_request = __commonJS({
         this.highWaterMark = highWaterMark;
         this.reason = null;
         this.removeAbortListener = null;
-        if (signal?.aborted) {
-          this.reason = signal.reason ?? new RequestAbortedError();
-        } else if (signal) {
+        if (signal) {
           this.removeAbortListener = util2.addAbortListener(signal, () => {
             this.reason = signal.reason ?? new RequestAbortedError();
             if (this.res) {
@@ -23331,7 +23602,11 @@ var require_api_request = __commonJS({
       }
       try {
         const handler = new RequestHandler(opts, callback);
-        this.dispatch(opts, handler);
+        if (opts.signal == null) {
+          this.dispatch(opts, handler);
+        } else {
+          dispatchWithSignal(this, opts, handler);
+        }
       } catch (err) {
         if (typeof callback !== "function") {
           throw err;
@@ -23345,58 +23620,6 @@ var require_api_request = __commonJS({
   }
 });
 
-// node_modules/undici/lib/api/abort-signal.js
-var require_abort_signal = __commonJS({
-  "node_modules/undici/lib/api/abort-signal.js"(exports2, module2) {
-    "use strict";
-    var { addAbortListener } = require_util2();
-    var { RequestAbortedError } = require_errors2();
-    var kListener = /* @__PURE__ */ Symbol("kListener");
-    var kSignal = /* @__PURE__ */ Symbol("kSignal");
-    function abort(self) {
-      if (self.abort) {
-        self.abort(self[kSignal]?.reason);
-      } else {
-        self.reason = self[kSignal]?.reason ?? new RequestAbortedError();
-      }
-      removeSignal(self);
-    }
-    function addSignal(self, signal) {
-      self.reason = null;
-      self[kSignal] = null;
-      self[kListener] = null;
-      if (!signal) {
-        return;
-      }
-      if (signal.aborted) {
-        abort(self);
-        return;
-      }
-      self[kSignal] = signal;
-      self[kListener] = () => {
-        abort(self);
-      };
-      addAbortListener(self[kSignal], self[kListener]);
-    }
-    function removeSignal(self) {
-      if (!self[kSignal]) {
-        return;
-      }
-      if ("removeEventListener" in self[kSignal]) {
-        self[kSignal].removeEventListener("abort", self[kListener]);
-      } else {
-        self[kSignal].removeListener("abort", self[kListener]);
-      }
-      self[kSignal] = null;
-      self[kListener] = null;
-    }
-    module2.exports = {
-      addSignal,
-      removeSignal
-    };
-  }
-});
-
 // node_modules/undici/lib/api/api-stream.js
 var require_api_stream = __commonJS({
   "node_modules/undici/lib/api/api-stream.js"(exports2, module2) {
@@ -23405,7 +23628,7 @@ var require_api_stream = __commonJS({
     var { AsyncResource } = require("node:async_hooks");
     var { InvalidArgumentError, InvalidReturnValueError } = require_errors2();
     var util2 = require_util2();
-    var { addSignal, removeSignal } = require_abort_signal();
+    var { addSignal, removeSignal, dispatchWithSignal } = require_abort_signal();
     function noop() {
     }
     function getWritableError(stream2) {
@@ -23594,7 +23817,11 @@ var require_api_stream = __commonJS({
       }
       try {
         const handler = new StreamHandler(opts, factory, callback);
-        this.dispatch(opts, handler);
+        if (opts.signal == null) {
+          this.dispatch(opts, handler);
+        } else {
+          dispatchWithSignal(this, opts, handler);
+        }
       } catch (err) {
         if (typeof callback !== "function") {
           throw err;
@@ -23625,7 +23852,7 @@ var require_api_pipeline = __commonJS({
     } = require_errors2();
     var util2 = require_util2();
     var { kBodyUsed } = require_symbols();
-    var { addSignal, removeSignal } = require_abort_signal();
+    var { addSignal, removeSignal, dispatchWithSignal } = require_abort_signal();
     function noop() {
     }
     var kResume = /* @__PURE__ */ Symbol("resume");
@@ -23804,7 +24031,12 @@ var require_api_pipeline = __commonJS({
     function pipeline(opts, handler) {
       try {
         const pipelineHandler = new PipelineHandler(opts, handler);
-        this.dispatch({ ...opts, body: pipelineHandler.req }, pipelineHandler);
+        const pipelineOpts = { ...opts, body: pipelineHandler.req };
+        if (opts.signal == null) {
+          this.dispatch(pipelineOpts, pipelineHandler);
+        } else {
+          dispatchWithSignal(this, pipelineOpts, pipelineHandler);
+        }
         return pipelineHandler.ret;
       } catch (err) {
         return new PassThrough().destroy(err);
@@ -23823,7 +24055,7 @@ var require_api_upgrade = __commonJS({
     var assert2 = require("node:assert");
     var util2 = require_util2();
     var { kHTTP2Stream } = require_symbols();
-    var { addSignal, removeSignal } = require_abort_signal();
+    var { addSignal, removeSignal, dispatchWithSignal } = require_abort_signal();
     var UpgradeHandler = class extends AsyncResource {
       constructor(opts, callback) {
         if (!opts || typeof opts !== "object") {
@@ -23901,7 +24133,11 @@ var require_api_upgrade = __commonJS({
           method: opts.method || "GET",
           upgrade: opts.protocol || "Websocket"
         };
-        this.dispatch(upgradeOpts, upgradeHandler);
+        if (opts.signal == null) {
+          this.dispatch(upgradeOpts, upgradeHandler);
+        } else {
+          dispatchWithSignal(this, upgradeOpts, upgradeHandler);
+        }
       } catch (err) {
         if (typeof callback !== "function") {
           throw err;
@@ -23922,7 +24158,7 @@ var require_api_connect = __commonJS({
     var { AsyncResource } = require("node:async_hooks");
     var { InvalidArgumentError, SocketError } = require_errors2();
     var util2 = require_util2();
-    var { addSignal, removeSignal } = require_abort_signal();
+    var { addSignal, removeSignal, dispatchWithSignal } = require_abort_signal();
     var ConnectHandler = class extends AsyncResource {
       constructor(opts, callback) {
         if (!opts || typeof opts !== "object") {
@@ -23993,7 +24229,11 @@ var require_api_connect = __commonJS({
       try {
         const connectHandler = new ConnectHandler(opts, callback);
         const connectOptions = { ...opts, method: "CONNECT" };
-        this.dispatch(connectOptions, connectHandler);
+        if (opts.signal == null) {
+          this.dispatch(connectOptions, connectHandler);
+        } else {
+          dispatchWithSignal(this, connectOptions, connectHandler);
+        }
       } catch (err) {
         if (typeof callback !== "function") {
           throw err;
@@ -26485,8 +26725,9 @@ var require_redirect = __commonJS({
   "node_modules/undici/lib/interceptor/redirect.js"(exports2, module2) {
     "use strict";
     var RedirectHandler = require_redirect_handler();
+    var { kInterceptorKind } = require_symbols();
     function createRedirectInterceptor({ maxRedirections: defaultMaxRedirections, throwOnMaxRedirect: defaultThrowOnMaxRedirect, stripHeadersOnRedirect: defaultStripHeadersOnRedirect, stripHeadersOnCrossOriginRedirect: defaultStripHeadersOnCrossOriginRedirect } = {}) {
-      return (dispatch) => {
+      const interceptor = (dispatch) => {
         return function Intercept(opts, handler) {
           const { maxRedirections = defaultMaxRedirections, throwOnMaxRedirect = defaultThrowOnMaxRedirect, stripHeadersOnRedirect = defaultStripHeadersOnRedirect, stripHeadersOnCrossOriginRedirect = defaultStripHeadersOnCrossOriginRedirect, ...rest } = opts;
           if (maxRedirections == null || maxRedirections === 0) {
@@ -26497,6 +26738,8 @@ var require_redirect = __commonJS({
           return dispatch(dispatchOpts, redirectHandler);
         };
       };
+      interceptor[kInterceptorKind] = "redirect";
+      return interceptor;
     }
     module2.exports = createRedirectInterceptor;
   }
@@ -29358,7 +29601,9 @@ var require_cache2 = __commonJS({
       isEtagUsable
     } = require_cache();
     var { AbortError } = require_errors2();
+    var { kQueuedAbort } = require_symbols();
     var { parseHttpDate } = require_date();
+    var { kInterceptorKind } = require_symbols();
     function assertCacheOrigins(origins, name) {
       if (origins === void 0) return;
       if (!Array.isArray(origins)) {
@@ -29673,7 +29918,10 @@ var require_cache2 = __commonJS({
             dispatch(
               {
                 ...opts,
-                headers: headers2
+                headers: headers2,
+                // The revalidation is not the caller's request: aborting the
+                // caller must not cancel it while it waits for a connection.
+                [kQueuedAbort]: void 0
               },
               new CacheHandler(globalOpts, cacheKey, {
                 // Silent handler that just updates the cache
@@ -29775,7 +30023,7 @@ var require_cache2 = __commonJS({
           safeMethodsToNotCache.push(method);
         }
       }
-      return (dispatch, interceptorOrigin) => {
+      const interceptor = (dispatch, interceptorOrigin) => {
         return (opts2, handler) => {
           const requestOrigin = getInterceptorOrigin(opts2, interceptorOrigin);
           if (!requestOrigin || arrayIncludes(safeMethodsToNotCache, opts2.method)) {
@@ -29860,6 +30108,8 @@ var require_cache2 = __commonJS({
           }
         };
       };
+      interceptor[kInterceptorKind] = "cache";
+      return interceptor;
     };
   }
 });
@@ -29957,10 +30207,6 @@ var require_decompress = __commonJS({
         }
       });
     }
-    var warningEmitted = (
-      /** @type {boolean} */
-      false
-    );
     var DecompressHandler = class extends DecoratorHandler {
       /** @type {Transform[]} */
       #decompressors = [];
@@ -30322,13 +30568,6 @@ var require_decompress = __commonJS({
       }
     };
     function createDecompressInterceptor(options = {}) {
-      if (!warningEmitted) {
-        process.emitWarning(
-          "DecompressInterceptor is experimental and subject to change",
-          "ExperimentalWarning"
-        );
-        warningEmitted = true;
-      }
       return (dispatch) => {
         return (opts, handler) => {
           if (opts.method === "HEAD") {
@@ -30768,6 +31007,7 @@ var require_deduplicate = __commonJS({
     var util2 = require_util2();
     var DeduplicationHandler = require_deduplication_handler();
     var { getInterceptorOrigin, normalizeHeaders, makeCacheKey, makeDeduplicationKey } = require_cache();
+    var { kInterceptorKind } = require_symbols();
     var pendingRequestsChannel = diagnosticsChannel.channel("undici:request:pending-requests");
     module2.exports = (opts = {}) => {
       const {
@@ -30799,7 +31039,7 @@ var require_deduplicate = __commonJS({
       const skipHeaderNamesSet = new Set(skipHeaderNames.map((name) => name.toLowerCase()));
       const excludeHeaderNamesSet = new Set(excludeHeaderNames.map((name) => name.toLowerCase()));
       const pendingRequests = /* @__PURE__ */ new Map();
-      return (dispatch, interceptorOrigin) => {
+      const interceptor = (dispatch, interceptorOrigin) => {
         return (opts2, handler) => {
           const requestOrigin = getInterceptorOrigin(opts2, interceptorOrigin);
           if (!requestOrigin || opts2.upgrade || methods.includes(opts2.method) === false) {
@@ -30842,6 +31082,8 @@ var require_deduplicate = __commonJS({
           return dispatch(opts2, deduplicationHandler);
         };
       };
+      interceptor[kInterceptorKind] = "deduplicate";
+      return interceptor;
     };
   }
 });
@@ -33088,7 +33330,7 @@ var require_fetch = __commonJS({
     var EE = require("node:events");
     var { Readable, pipeline, finished, isErrored, isReadable } = require("node:stream");
     var { addAbortListener, bufferToLowerCasedHeaderName } = require_util2();
-    var { SocketError } = require_errors2();
+    var { SocketError, InformationalError } = require_errors2();
     var { dataURLProcessor, serializeAMimeType, minimizeSupportedMimeType } = require_data_url();
     var { getGlobalDispatcher } = require_global2();
     var { webidl } = require_webidl();
@@ -34109,6 +34351,7 @@ var require_fetch = __commonJS({
                     }
                   }
                 }
+                this.nullBodyStatus = nullBodyStatus.includes(status);
                 this.body = new Readable({ read: () => controller.resume() });
                 const onError = (err) => this.onResponseError(controller, err);
                 resolve({
@@ -34123,6 +34366,10 @@ var require_fetch = __commonJS({
                 });
               },
               onResponseData(controller, chunk) {
+                if (this.nullBodyStatus) {
+                  controller.abort(new InformationalError("response with null body status has content"));
+                  return;
+                }
                 if (fetchParams.controller.dump) {
                   return;
                 }
@@ -34142,6 +34389,10 @@ var require_fetch = __commonJS({
               onResponseError(controller, error62) {
                 if (this.abort) {
                   fetchParams.controller.off("terminated", this.abort);
+                }
+                if (this.nullBodyStatus) {
+                  this.body?.destroy();
+                  return;
                 }
                 if (request.mode === "websocket" && allowH2 !== false && error62?.code === "UND_ERR_INFO" && error62?.message === "HTTP/2: Extended CONNECT protocol not supported by server") {
                   resolve(dispatchWithProtocolPreference(body2, false));
@@ -73185,7 +73436,7 @@ function scanAttributeTokens(attrStr) {
     while (i < len && isWhiteSpace(attrStr[i])) i++;
     if (i >= len) break;
     if (attrStr[i] === "=") {
-      i = tokenStart + 1;
+      i++;
       continue;
     }
     const leadingWs = attrStr.slice(tokenStart, i);
@@ -76405,7 +76656,10 @@ function resolveNameSpace(tagname) {
   }
   return tagname;
 }
-var attrsRegx = new RegExp(`([^\\s=]+)\\s*(=\\s*(['"])([\\s\\S]*?)\\3)?`, "gm");
+var attrsRegx = /([^\s=]+)\s*(=\s*(?:"([^"]*)"|'([^']*)'))?/gm;
+function attrValue(match) {
+  return match[3] !== void 0 ? match[3] : match[4];
+}
 function buildAttributesMap(attrStr, jPath, tagName, force = false) {
   const options = this.options;
   if (force === true || options.ignoreAttributes !== true && typeof attrStr === "string") {
@@ -76417,7 +76671,7 @@ function buildAttributesMap(attrStr, jPath, tagName, force = false) {
     const rawAttrsForMatcher = {};
     for (let i = 0; i < len; i++) {
       const attrName = this.resolveNameSpace(matches[i][1]);
-      const oldVal = matches[i][4];
+      const oldVal = attrValue(matches[i]);
       if (attrName.length && oldVal !== void 0) {
         let val = oldVal;
         if (options.trimValues) val = val.trim();
@@ -76441,7 +76695,7 @@ function buildAttributesMap(attrStr, jPath, tagName, force = false) {
           aName = options.transformAttributeName(aName);
         }
         aName = sanitizeName(aName, options);
-        if (matches[i][4] !== void 0) {
+        if (attrValue(matches[i]) !== void 0) {
           const oldVal = processedVals[i];
           const newVal = options.attributeValueProcessor(attrName, oldVal, jPathStr);
           if (newVal === null || newVal === void 0) {
@@ -76757,7 +77011,6 @@ function isItStopNode() {
   return this.matcher.matchesAny(this.stopNodeExpressionsSet);
 }
 function tagExpWithClosingIndex(xmlData, i, closingChar = ">") {
-  let attrBoundary = 0;
   const len = xmlData.length;
   const closeCode0 = closingChar.charCodeAt(0);
   const closeCode1 = closingChar.length > 1 ? closingChar.charCodeAt(1) : -1;
@@ -76765,10 +77018,9 @@ function tagExpWithClosingIndex(xmlData, i, closingChar = ">") {
   let segmentStart = i;
   for (let index = i; index < len; index++) {
     const code = xmlData.charCodeAt(index);
-    if (attrBoundary) {
-      if (code === attrBoundary) attrBoundary = 0;
-    } else if (code === 34 || code === 39) {
-      attrBoundary = code;
+    if (code === 34 || code === 39) {
+      index = xmlData.indexOf(xmlData[index], index + 1);
+      if (index === -1) return;
     } else if (code === closeCode0) {
       if (closeCode1 !== -1) {
         if (xmlData.charCodeAt(index + 1) === closeCode1) {
@@ -76779,7 +77031,7 @@ function tagExpWithClosingIndex(xmlData, i, closingChar = ">") {
         result += xmlData.substring(segmentStart, index);
         return { data: result, index };
       }
-    } else if (code === 9 && !attrBoundary) {
+    } else if (code === 9) {
       result += xmlData.substring(segmentStart, index) + " ";
       segmentStart = index + 1;
     }
@@ -77595,6 +77847,7 @@ function registerSecurityTools(server2) {
     from_zones: external_exports.array(external_exports.string().min(1)).min(1).describe("Source zones (e.g. ['trust', 'dmz'])"),
     to_zones: external_exports.array(external_exports.string().min(1)).min(1).describe("Destination zones (e.g. ['untrust'])"),
     source: external_exports.array(external_exports.string().min(1)).min(1).describe("Source addresses or 'any'"),
+    source_user: external_exports.array(external_exports.string().min(1)).min(1).optional().describe("Source users or groups (e.g. ['example\\jdoe', 'cn=admins,ou=groups,dc=example,dc=com']) or 'any', 'known-user', 'unknown', 'pre-logon'. Omit for PanOS default (any)."),
     destination: external_exports.array(external_exports.string().min(1)).min(1).describe("Destination addresses or 'any'"),
     application: external_exports.array(external_exports.string().min(1)).min(1).describe("Applications (e.g. ['web-browsing', 'ssl']) or 'any'"),
     service: external_exports.array(external_exports.string().min(1)).min(1).describe("Services (e.g. ['application-default', 'service-http']) or 'any'"),
@@ -77606,7 +77859,7 @@ function registerSecurityTools(server2) {
     disabled: external_exports.boolean().optional().describe("Create rule in disabled state"),
     tag: external_exports.array(external_exports.string().min(1)).optional().describe("Tags to apply to the rule"),
     firewall: firewallName
-  }, { title: "Add Security Rule", readOnlyHint: false, destructiveHint: true }, async ({ name, from_zones, to_zones, source, destination, application, service, action, log_end, log_start, profile_group, description, disabled, tag, firewall }) => {
+  }, { title: "Add Security Rule", readOnlyHint: false, destructiveHint: true }, async ({ name, from_zones, to_zones, source, source_user, destination, application, service, action, log_end, log_start, profile_group, description, disabled, tag, firewall }) => {
     const target = resolveTarget(firewall);
     if (isApiError(target))
       return formatResponse(target);
@@ -77615,6 +77868,8 @@ function registerSecurityTools(server2) {
     element += `<from>${members2(from_zones)}</from>`;
     element += `<to>${members2(to_zones)}</to>`;
     element += `<source>${members2(source)}</source>`;
+    if (source_user && source_user.length > 0)
+      element += `<source-user>${members2(source_user)}</source-user>`;
     element += `<destination>${members2(destination)}</destination>`;
     element += `<application>${members2(application)}</application>`;
     element += `<service>${members2(service)}</service>`;
@@ -77679,6 +77934,7 @@ function registerSecurityTools(server2) {
     name: external_exports.string().min(1).max(63).describe("Rule name"),
     from_zones: external_exports.array(external_exports.string().min(1)).min(1).describe("Source zones"),
     source: external_exports.array(external_exports.string().min(1)).min(1).describe("Source addresses or 'any'"),
+    source_user: external_exports.array(external_exports.string().min(1)).min(1).optional().describe("Source users or groups (e.g. ['example\\jdoe', 'cn=admins,ou=groups,dc=example,dc=com']) or 'any', 'known-user', 'unknown', 'pre-logon'. Omit for PanOS default (any)."),
     action: external_exports.enum(["forward", "discard", "no-pbf"]).describe("PBF action"),
     egress_interface: external_exports.string().optional().describe("Egress interface (required for 'forward' action)"),
     next_hop_type: external_exports.enum(["ip-address", "fqdn"]).optional().describe("Next-hop type (for 'forward' action)"),
@@ -77686,7 +77942,7 @@ function registerSecurityTools(server2) {
     description: external_exports.string().max(1023).optional().describe("Optional description"),
     disabled: external_exports.boolean().optional().describe("Create rule in disabled state"),
     firewall: firewallName
-  }, { title: "Add PBF Rule", readOnlyHint: false, destructiveHint: true }, async ({ name, from_zones, source, action, egress_interface, next_hop_type, next_hop_value, description, disabled, firewall }) => {
+  }, { title: "Add PBF Rule", readOnlyHint: false, destructiveHint: true }, async ({ name, from_zones, source, source_user, action, egress_interface, next_hop_type, next_hop_value, description, disabled, firewall }) => {
     const target = resolveTarget(firewall);
     if (isApiError(target))
       return formatResponse(target);
@@ -77694,6 +77950,8 @@ function registerSecurityTools(server2) {
     let element = `<entry name="${xmlEscape(name)}">`;
     element += `<from><zone>${members2(from_zones)}</zone></from>`;
     element += `<source>${members2(source)}</source>`;
+    if (source_user && source_user.length > 0)
+      element += `<source-user>${members2(source_user)}</source-user>`;
     element += `<action>`;
     if (action === "forward") {
       element += `<forward>`;
@@ -77762,6 +78020,7 @@ function registerSecurityTools(server2) {
     from_zones: external_exports.array(external_exports.string().min(1)).min(1).describe("Source zones"),
     to_zones: external_exports.array(external_exports.string().min(1)).min(1).describe("Destination zones"),
     source: external_exports.array(external_exports.string().min(1)).min(1).describe("Source addresses or 'any'"),
+    source_user: external_exports.array(external_exports.string().min(1)).min(1).optional().describe("Source users or groups (e.g. ['example\\jdoe', 'cn=admins,ou=groups,dc=example,dc=com']) or 'any', 'known-user', 'unknown', 'pre-logon'. Omit for PanOS default (any)."),
     destination: external_exports.array(external_exports.string().min(1)).min(1).describe("Destination addresses or 'any'"),
     application: external_exports.array(external_exports.string().min(1)).min(1).describe("Applications or 'any'"),
     service: external_exports.array(external_exports.string().min(1)).min(1).describe("Services or 'any'"),
@@ -77769,7 +78028,7 @@ function registerSecurityTools(server2) {
     description: external_exports.string().max(1023).optional().describe("Optional description"),
     disabled: external_exports.boolean().optional().describe("Create rule in disabled state"),
     firewall: firewallName
-  }, { title: "Add QoS Rule", readOnlyHint: false, destructiveHint: true }, async ({ name, from_zones, to_zones, source, destination, application, service, action_class, description, disabled, firewall }) => {
+  }, { title: "Add QoS Rule", readOnlyHint: false, destructiveHint: true }, async ({ name, from_zones, to_zones, source, source_user, destination, application, service, action_class, description, disabled, firewall }) => {
     const target = resolveTarget(firewall);
     if (isApiError(target))
       return formatResponse(target);
@@ -77778,6 +78037,8 @@ function registerSecurityTools(server2) {
     element += `<from>${members2(from_zones)}</from>`;
     element += `<to>${members2(to_zones)}</to>`;
     element += `<source>${members2(source)}</source>`;
+    if (source_user && source_user.length > 0)
+      element += `<source-user>${members2(source_user)}</source-user>`;
     element += `<destination>${members2(destination)}</destination>`;
     element += `<application>${members2(application)}</application>`;
     element += `<service>${members2(service)}</service>`;
@@ -78461,6 +78722,7 @@ function registerPanoramaTools(server2) {
     from_zones: external_exports.array(external_exports.string().min(1)).min(1).describe("Source zones (e.g. ['trust', 'dmz'])"),
     to_zones: external_exports.array(external_exports.string().min(1)).min(1).describe("Destination zones (e.g. ['untrust'])"),
     source: external_exports.array(external_exports.string().min(1)).min(1).describe("Source addresses or 'any'"),
+    source_user: external_exports.array(external_exports.string().min(1)).min(1).optional().describe("Source users or groups (e.g. ['example\\jdoe', 'cn=admins,ou=groups,dc=example,dc=com']) or 'any', 'known-user', 'unknown', 'pre-logon'. Omit for PanOS default (any)."),
     destination: external_exports.array(external_exports.string().min(1)).min(1).describe("Destination addresses or 'any'"),
     application: external_exports.array(external_exports.string().min(1)).min(1).describe("Applications (e.g. ['web-browsing', 'ssl']) or 'any'"),
     service: external_exports.array(external_exports.string().min(1)).min(1).describe("Services (e.g. ['application-default']) or 'any'"),
@@ -78472,7 +78734,7 @@ function registerPanoramaTools(server2) {
     disabled: external_exports.boolean().optional().describe("Create rule in disabled state"),
     tag: external_exports.array(external_exports.string().min(1)).optional().describe("Tags to apply to the rule"),
     firewall: firewallName
-  }, { title: "Panorama Add Pre Rule", readOnlyHint: false, destructiveHint: true }, async ({ device_group, name, from_zones, to_zones, source, destination, application, service, action, log_end, log_start, profile_group, description, disabled, tag, firewall }) => {
+  }, { title: "Panorama Add Pre Rule", readOnlyHint: false, destructiveHint: true }, async ({ device_group, name, from_zones, to_zones, source, source_user, destination, application, service, action, log_end, log_start, profile_group, description, disabled, tag, firewall }) => {
     const target = resolveTarget(firewall);
     if (isApiError(target))
       return formatResponse(target);
@@ -78481,6 +78743,8 @@ function registerPanoramaTools(server2) {
     element += `<from>${members5(from_zones)}</from>`;
     element += `<to>${members5(to_zones)}</to>`;
     element += `<source>${members5(source)}</source>`;
+    if (source_user && source_user.length > 0)
+      element += `<source-user>${members5(source_user)}</source-user>`;
     element += `<destination>${members5(destination)}</destination>`;
     element += `<application>${members5(application)}</application>`;
     element += `<service>${members5(service)}</service>`;
@@ -78536,6 +78800,7 @@ function registerPanoramaTools(server2) {
     from_zones: external_exports.array(external_exports.string().min(1)).min(1).describe("Source zones (e.g. ['trust', 'dmz'])"),
     to_zones: external_exports.array(external_exports.string().min(1)).min(1).describe("Destination zones (e.g. ['untrust'])"),
     source: external_exports.array(external_exports.string().min(1)).min(1).describe("Source addresses or 'any'"),
+    source_user: external_exports.array(external_exports.string().min(1)).min(1).optional().describe("Source users or groups (e.g. ['example\\jdoe', 'cn=admins,ou=groups,dc=example,dc=com']) or 'any', 'known-user', 'unknown', 'pre-logon'. Omit for PanOS default (any)."),
     destination: external_exports.array(external_exports.string().min(1)).min(1).describe("Destination addresses or 'any'"),
     application: external_exports.array(external_exports.string().min(1)).min(1).describe("Applications (e.g. ['web-browsing', 'ssl']) or 'any'"),
     service: external_exports.array(external_exports.string().min(1)).min(1).describe("Services (e.g. ['application-default']) or 'any'"),
@@ -78547,7 +78812,7 @@ function registerPanoramaTools(server2) {
     disabled: external_exports.boolean().optional().describe("Create rule in disabled state"),
     tag: external_exports.array(external_exports.string().min(1)).optional().describe("Tags to apply to the rule"),
     firewall: firewallName
-  }, { title: "Panorama Add Post Rule", readOnlyHint: false, destructiveHint: true }, async ({ device_group, name, from_zones, to_zones, source, destination, application, service, action, log_end, log_start, profile_group, description, disabled, tag, firewall }) => {
+  }, { title: "Panorama Add Post Rule", readOnlyHint: false, destructiveHint: true }, async ({ device_group, name, from_zones, to_zones, source, source_user, destination, application, service, action, log_end, log_start, profile_group, description, disabled, tag, firewall }) => {
     const target = resolveTarget(firewall);
     if (isApiError(target))
       return formatResponse(target);
@@ -78556,6 +78821,8 @@ function registerPanoramaTools(server2) {
     element += `<from>${members5(from_zones)}</from>`;
     element += `<to>${members5(to_zones)}</to>`;
     element += `<source>${members5(source)}</source>`;
+    if (source_user && source_user.length > 0)
+      element += `<source-user>${members5(source_user)}</source-user>`;
     element += `<destination>${members5(destination)}</destination>`;
     element += `<application>${members5(application)}</application>`;
     element += `<service>${members5(service)}</service>`;
@@ -78850,6 +79117,7 @@ function registerCertificatesTools(server2) {
     from_zones: external_exports.array(external_exports.string().min(1)).min(1).describe("Source zones"),
     to_zones: external_exports.array(external_exports.string().min(1)).min(1).describe("Destination zones"),
     source: external_exports.array(external_exports.string().min(1)).min(1).describe("Source addresses or 'any'"),
+    source_user: external_exports.array(external_exports.string().min(1)).min(1).optional().describe("Source users or groups (e.g. ['example\\jdoe', 'cn=admins,ou=groups,dc=example,dc=com']) or 'any', 'known-user', 'unknown', 'pre-logon'. Omit for PanOS default (any)."),
     destination: external_exports.array(external_exports.string().min(1)).min(1).describe("Destination addresses or 'any'"),
     service: external_exports.array(external_exports.string().min(1)).min(1).describe("Services or 'any'"),
     action: external_exports.enum(["decrypt", "no-decrypt"]).describe("Decrypt or pass through"),
@@ -78858,7 +79126,7 @@ function registerCertificatesTools(server2) {
     description: external_exports.string().max(1023).optional().describe("Optional description"),
     disabled: external_exports.boolean().optional().describe("Create rule in disabled state"),
     firewall: firewallName
-  }, { title: "Add Decryption Rule", readOnlyHint: false, destructiveHint: true }, async ({ name, from_zones, to_zones, source, destination, service, action, type, decryption_profile, description, disabled, firewall }) => {
+  }, { title: "Add Decryption Rule", readOnlyHint: false, destructiveHint: true }, async ({ name, from_zones, to_zones, source, source_user, destination, service, action, type, decryption_profile, description, disabled, firewall }) => {
     const target = resolveTarget(firewall);
     if (isApiError(target))
       return formatResponse(target);
@@ -78867,6 +79135,8 @@ function registerCertificatesTools(server2) {
     element += `<from>${members6(from_zones)}</from>`;
     element += `<to>${members6(to_zones)}</to>`;
     element += `<source>${members6(source)}</source>`;
+    if (source_user && source_user.length > 0)
+      element += `<source-user>${members6(source_user)}</source-user>`;
     element += `<destination>${members6(destination)}</destination>`;
     element += `<service>${members6(service)}</service>`;
     element += `<action>${action}</action>`;
@@ -79069,7 +79339,7 @@ function registerUtilityTools(server2) {
 // dist/index.js
 var server = new McpServer({
   name: "panos-mcp",
-  version: "1.3.40"
+  version: "1.3.41"
 });
 var _tool = server.tool.bind(server);
 server.tool = function(...args) {
