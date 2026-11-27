@@ -106,6 +106,7 @@ export function registerSecurityTools(server: McpServer) {
       from_zones: z.array(z.string().min(1)).min(1).describe("Source zones (e.g. ['trust', 'dmz'])"),
       to_zones: z.array(z.string().min(1)).min(1).describe("Destination zones (e.g. ['untrust'])"),
       source: z.array(z.string().min(1)).min(1).describe("Source addresses or 'any'"),
+      source_user: z.array(z.string().min(1)).min(1).optional().describe("Source users or groups (e.g. ['example\\jdoe', 'cn=admins,ou=groups,dc=example,dc=com']) or 'any', 'known-user', 'unknown', 'pre-logon'. Omit for PanOS default (any)."),
       destination: z.array(z.string().min(1)).min(1).describe("Destination addresses or 'any'"),
       application: z.array(z.string().min(1)).min(1).describe("Applications (e.g. ['web-browsing', 'ssl']) or 'any'"),
       service: z.array(z.string().min(1)).min(1).describe("Services (e.g. ['application-default', 'service-http']) or 'any'"),
@@ -119,7 +120,7 @@ export function registerSecurityTools(server: McpServer) {
       firewall: firewallName,
     },
     { title: "Add Security Rule", readOnlyHint: false, destructiveHint: true },
-    async ({ name, from_zones, to_zones, source, destination, application, service, action, log_end, log_start, profile_group, description, disabled, tag, firewall }) => {
+    async ({ name, from_zones, to_zones, source, source_user, destination, application, service, action, log_end, log_start, profile_group, description, disabled, tag, firewall }) => {
       const target = resolveTarget(firewall);
       if (isApiError(target)) return formatResponse(target);
       const xpath = "/config/devices/entry[@name='localhost.localdomain']/vsys/entry[@name='vsys1']/rulebase/security/rules";
@@ -127,6 +128,7 @@ export function registerSecurityTools(server: McpServer) {
       element += `<from>${members(from_zones)}</from>`;
       element += `<to>${members(to_zones)}</to>`;
       element += `<source>${members(source)}</source>`;
+      if (source_user && source_user.length > 0) element += `<source-user>${members(source_user)}</source-user>`;
       element += `<destination>${members(destination)}</destination>`;
       element += `<application>${members(application)}</application>`;
       element += `<service>${members(service)}</service>`;
@@ -210,6 +212,7 @@ export function registerSecurityTools(server: McpServer) {
       name: z.string().min(1).max(63).describe("Rule name"),
       from_zones: z.array(z.string().min(1)).min(1).describe("Source zones"),
       source: z.array(z.string().min(1)).min(1).describe("Source addresses or 'any'"),
+      source_user: z.array(z.string().min(1)).min(1).optional().describe("Source users or groups (e.g. ['example\\jdoe', 'cn=admins,ou=groups,dc=example,dc=com']) or 'any', 'known-user', 'unknown', 'pre-logon'. Omit for PanOS default (any)."),
       action: z.enum(["forward", "discard", "no-pbf"]).describe("PBF action"),
       egress_interface: z.string().optional().describe("Egress interface (required for 'forward' action)"),
       next_hop_type: z.enum(["ip-address", "fqdn"]).optional().describe("Next-hop type (for 'forward' action)"),
@@ -219,13 +222,14 @@ export function registerSecurityTools(server: McpServer) {
       firewall: firewallName,
     },
     { title: "Add PBF Rule", readOnlyHint: false, destructiveHint: true },
-    async ({ name, from_zones, source, action, egress_interface, next_hop_type, next_hop_value, description, disabled, firewall }) => {
+    async ({ name, from_zones, source, source_user, action, egress_interface, next_hop_type, next_hop_value, description, disabled, firewall }) => {
       const target = resolveTarget(firewall);
       if (isApiError(target)) return formatResponse(target);
       const xpath = "/config/devices/entry[@name='localhost.localdomain']/vsys/entry[@name='vsys1']/rulebase/pbf/rules";
       let element = `<entry name="${xmlEscape(name)}">`;
       element += `<from><zone>${members(from_zones)}</zone></from>`;
       element += `<source>${members(source)}</source>`;
+      if (source_user && source_user.length > 0) element += `<source-user>${members(source_user)}</source-user>`;
       element += `<action>`;
       if (action === "forward") {
         element += `<forward>`;
@@ -316,6 +320,7 @@ export function registerSecurityTools(server: McpServer) {
       from_zones: z.array(z.string().min(1)).min(1).describe("Source zones"),
       to_zones: z.array(z.string().min(1)).min(1).describe("Destination zones"),
       source: z.array(z.string().min(1)).min(1).describe("Source addresses or 'any'"),
+      source_user: z.array(z.string().min(1)).min(1).optional().describe("Source users or groups (e.g. ['example\\jdoe', 'cn=admins,ou=groups,dc=example,dc=com']) or 'any', 'known-user', 'unknown', 'pre-logon'. Omit for PanOS default (any)."),
       destination: z.array(z.string().min(1)).min(1).describe("Destination addresses or 'any'"),
       application: z.array(z.string().min(1)).min(1).describe("Applications or 'any'"),
       service: z.array(z.string().min(1)).min(1).describe("Services or 'any'"),
@@ -325,7 +330,7 @@ export function registerSecurityTools(server: McpServer) {
       firewall: firewallName,
     },
     { title: "Add QoS Rule", readOnlyHint: false, destructiveHint: true },
-    async ({ name, from_zones, to_zones, source, destination, application, service, action_class, description, disabled, firewall }) => {
+    async ({ name, from_zones, to_zones, source, source_user, destination, application, service, action_class, description, disabled, firewall }) => {
       const target = resolveTarget(firewall);
       if (isApiError(target)) return formatResponse(target);
       const xpath = "/config/devices/entry[@name='localhost.localdomain']/vsys/entry[@name='vsys1']/rulebase/qos/rules";
@@ -333,6 +338,7 @@ export function registerSecurityTools(server: McpServer) {
       element += `<from>${members(from_zones)}</from>`;
       element += `<to>${members(to_zones)}</to>`;
       element += `<source>${members(source)}</source>`;
+      if (source_user && source_user.length > 0) element += `<source-user>${members(source_user)}</source-user>`;
       element += `<destination>${members(destination)}</destination>`;
       element += `<application>${members(application)}</application>`;
       element += `<service>${members(service)}</service>`;
