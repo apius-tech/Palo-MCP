@@ -61,7 +61,7 @@ export function registerCertificatesTools(server: McpServer) {
       from_zones: z.array(z.string().min(1)).min(1).describe("Source zones"),
       to_zones: z.array(z.string().min(1)).min(1).describe("Destination zones"),
       source: z.array(z.string().min(1)).min(1).describe("Source addresses or 'any'"),
-      source_user: z.array(z.string().min(1)).optional().describe("Source users or groups (e.g. ['example\\jdoe', 'cn=admins,ou=groups,dc=example,dc=com']) or 'any', 'known-user', 'unknown', 'pre-logon'. Omit for PanOS default (any)."),
+      source_user: z.array(z.string().min(1)).min(1).optional().describe("Source users or groups (e.g. ['example\\jdoe', 'cn=admins,ou=groups,dc=example,dc=com']) or 'any', 'known-user', 'unknown', 'pre-logon'. Omit for PanOS default (any)."),
       destination: z.array(z.string().min(1)).min(1).describe("Destination addresses or 'any'"),
       service: z.array(z.string().min(1)).min(1).describe("Services or 'any'"),
       action: z.enum(["decrypt", "no-decrypt"]).describe("Decrypt or pass through"),
